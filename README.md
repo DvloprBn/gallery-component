@@ -1,11 +1,11 @@
 # Galería
 
-Galería de imágenes con personalización y animaciones de grado profesional. Proyecto de estudio
-(sin negocio real detrás), construido con estándar de producción: sin atajos simulados, seguridad
-como prioridad #1, y documentado al grado de poder leerse y entenderse completo.
+Galería de imágenes con personalización y animaciones de grado profesional. **Demo de vitrina** que
+vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
+atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado actual: modo diseño.** Existe la documentación, todavía no el código de aplicación.
-> Ver `ESTADO_PROYECTO.md`.
+> **Estado: Fase 2 (identidad) completada y verificada.** Falta la Fase 3 (media / subida de
+> imágenes) en adelante. Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
 
@@ -50,8 +50,25 @@ docker compose up -d --build
 | Salud de la API | http://localhost:3050/health |
 | Swagger (solo dev) | http://localhost:3050/docs |
 
-La migración inicial ya está versionada — el backend corre `prisma migrate deploy` solo al
-arrancar, no hace falta ningún paso manual. Postgres (5438) y Redis (6383) se publican solo en
-`127.0.0.1`.
+Al arrancar, el backend corre `prisma migrate deploy` + el seed (idempotente) — no hace falta
+ningún paso manual. Postgres (5438) y Redis (6383) se publican solo en `127.0.0.1`.
 
 Parar: `docker compose down` (agrega `-v` para borrar también los datos).
+
+## Cuentas de prueba (seed)
+
+Una por rol, contraseña `TestOnly123!`:
+
+`usuario+gallery@example.com` · `staff+gallery@example.com` · `manager+gallery@example.com` ·
+`admin+gallery@example.com` · `director+gallery@example.com` · `super+gallery@example.com`
+
+Jerarquía de autoridad: `usuario`(0) → `staff`(1) → `manager`(2) → `admin`(3) →
+`director`(4, máx. 1) → `super`(5, máx. 1). Nadie puede crear ni gestionar un rol o una cuenta de
+nivel igual o superior al suyo.
+
+## Pruebas
+
+```bash
+docker compose exec gallery_backend npm test   # 11 tests jest (utilidades puras)
+```
+

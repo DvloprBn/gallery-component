@@ -15,6 +15,8 @@ const REQUIRED_KEYS = [
   'STORAGE_DRIVER',
   'ALLOWED_ORIGINS',
   'FRONTEND_URL',
+  'RESEND_API_KEY',
+  'MAIL_FROM_ADDRESS',
 ] as const;
 
 /**

@@ -58,6 +58,53 @@ hexadecimales (32 bytes — el tamaño que exige AES-256-GCM), el proceso **fall
 un mensaje claro. Alternativa que se evita: arrancar igual y descubrir el hueco horas después,
 cuando un usuario real intenta activar 2FA y el cifrado revienta.
 
+### E4. Por qué el login son 3 pasos y qué es el "challenge token"
+
+**Archivos**: `src/auth/auth.service.ts` (`loginStep1`/`loginStep2`/`login2fa`),
+`src/auth/jwt-payload.interface.ts`.
+
+El login imita la UX de Google: primero solo el correo, luego la contraseña, luego el segundo
+factor — cada uno en su pantalla. La pieza interesante es qué pasa **entre** el paso 2 y el 3
+cuando la cuenta tiene 2FA: el servidor NO emite la sesión todavía. Emite un *challenge token* —
+un JWT firmado con `purpose: '2fa_challenge'` y 5 minutos de vida — que solo significa "este
+correo ya pasó la contraseña, le falta el 2FA". `JwtStrategy.validate` rechaza cualquier token
+cuyo `purpose` no sea `'access'`, así que ese challenge **no abre ningún endpoint** — se probó:
+usarlo como cookie de sesión da 401.
+
+### E5. Rotación de refresh token y detección de robo
+
+**Archivo**: `src/auth/auth.service.ts` (`refresh`, `issueSession`).
+
+El access token vive 15 min; el refresh, 7 días. Cada vez que se usa el refresh para renovar, se
+marca `used_at` y se emite uno nuevo (rotación). Si alguien presenta un refresh **ya usado**
+pasada una ventana de gracia de 10 s (que tolera un doble-click en carrera), el sistema asume que
+el token fue robado y **revoca todas las sesiones de esa cuenta** de golpe, no solo el intento
+sospechoso. En la BD el refresh token nunca se guarda en claro: solo su `sha256` (256 bits de
+entropía no necesitan bcrypt, y un hash sí se puede indexar para buscar O(1)).
+
+### E6. Hash vs. cifrado, aplicado: contraseña, secreto TOTP, código de recuperación
+
+**Archivos**: `src/common/utils/crypto.util.ts`, `src/two-factor/two-factor.service.ts`.
+
+Tres secretos, tres tratamientos distintos, por una razón concreta en cada caso:
+- **Contraseña** → `bcrypt` (hash de una vía, lento a propósito). El servidor nunca necesita
+  recuperarla, solo comparar.
+- **Secreto TOTP** → `AES-256-GCM` (cifrado simétrico, reversible). El servidor SÍ necesita leerlo
+  de vuelta para recalcular el código de 6 dígitos y compararlo. La llave vive en su propia
+  variable de entorno, distinta de `JWT_SECRET`.
+- **Código de recuperación de 2FA** → `bcrypt` otra vez. Como la contraseña: solo se compara,
+  nunca se re-muestra. Además es de un solo uso (`used_at`).
+
+### E7. `otplib` v12 vs v13 — cuándo NO tomar la última versión
+
+**Archivo**: `src/common/utils/totp.util.ts`, `package.json`.
+
+La última versión de `otplib` (13) es una reescritura completa: ESM-first, API asíncrona, sin el
+objeto `authenticator` de siempre. Para una pieza de seguridad como la verificación del segundo
+factor, se fijó **`otplib@12`** — la API estable que usan todos los ejemplos y que no tiene CVEs.
+No es pereza: es preferir lo probado en el punto donde un bug sutil significa "cualquier código
+pasa el 2FA". La v13 se adoptará cuando esté rodada.
+
 ---
 
 ## Mapa de conceptos pendientes

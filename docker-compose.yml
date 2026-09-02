@@ -70,7 +70,7 @@ services:
     # migrate deploy aplica las migraciones ya versionadas (prisma/migrations/).
     # La migración inicial 0_init ya está creada y commiteada — no hace falta
     # ningún `migrate dev` manual en el primer arranque.
-    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run start:dev"
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npx ts-node prisma/seed.ts && npm run start:dev"
     networks: [gallery_network]
 
   gallery_frontend:

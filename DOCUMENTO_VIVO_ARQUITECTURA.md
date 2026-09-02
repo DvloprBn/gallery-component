@@ -467,3 +467,83 @@ Prisma 7 cambió el modelo de conexión. Lo que hubo que hacer, distinto a "lo d
   errors"; `PrismaService`/`RedisModule` → "Conexión establecida"; `Nest application successfully
   started`.
 - `tsc -p tsconfig.build.json --noEmit` en el host → 0 errores.
+
+---
+
+## 3. Fase 2 — Identidad (completada y verificada, 2026-09-01)
+
+### 3.1 Qué se construyó
+
+**Utilidades puras** (`src/common/utils/`, cada una con su `*.spec.ts`):
+`crypto.util` (AES-256-GCM para el secreto TOTP), `totp.util` (RFC 6238 vía `otplib`),
+`escape-html.util`, `token.util` (token opaco + `sha256Hex` + comparación en tiempo constante),
+`duration.util` (`"15m"` → ms / segundos).
+
+**`auth`** — login en 3 pasos en pantallas separadas (correo → contraseña → 2FA), registro público
+con auto-login, `refresh` con rotación + ventana de gracia (10 s) + revocación en cascada al
+detectar reuso, `logout`, `GET /me`, cambio y recuperación de contraseña. JWT `HS256` fijado
+explícito; access token en cookie httpOnly, refresh token opaco (en la BD solo su `sha256`).
+Entre el paso de contraseña y el de 2FA se emite un **challenge token** de 5 min con `purpose`
+propio — nunca sirve como sesión.
+
+**`two-factor`** — `setup` (secreto cifrado + QR real con `qrcode`), `confirm-setup` (activa 2FA y
+entrega 10 códigos de recuperación de un solo uso, hasheados con bcrypt), `disable` (pide
+contraseña), `regenerate` (pide código TOTP).
+
+**`roles`** — CRUD de roles dinámicos con el candado de jerarquía: nadie crea/edita/borra un rol de
+nivel ≥ al suyo; un rol `is_system` no cambia de `level`/`max_count` ni se borra.
+
+**`users`** — alta administrativa (contraseña temporal + `must_change_password`, correo de
+bienvenida, `tempPassword` en la respuesta solo si el correo no se entregó), cambio de rol/estado.
+`assertCanManageRole`: solo cuentas de nivel estrictamente menor, y respeta `max_count` (excluyendo
+a la propia cuenta al reasignarle su mismo rol). Vista "segura" — nunca expone `password_hash` ni
+`totp_secret_encrypted`.
+
+**`security-events`** — conteo en Redis (ventana fija) para login (10/15 min), 2FA (5/15 min) y
+reuso de refresh token; fila real en `security_events` + alerta por correo solo al cruzar el umbral.
+
+**`mail`** — Resend por `fetch` nativo; degrada con elegancia (nunca truena el flujo llamador).
+
+**`prisma/seed.ts`** — 6 roles (`usuario`=0 … `super`=5, con `max_count:1` para `director`/`super`)
+y una cuenta de prueba por rol (`<rol>+gallery@example.com`, contraseña `TestOnly123!`).
+
+**Guards globales** (`APP_GUARD`): `JwtAuthGuard` (toda ruta exige sesión salvo `@Public()`) y
+`RolesGuard` (aplica `@Roles()`). `GET /health` marcado `@Public()`.
+
+### 3.2 Hallazgos de la ejecución
+
+- **`otplib` 13 es una reescritura completa** (ESM-first, API asíncrona, sin el singleton
+  `authenticator`). Para un camino tan sensible como la verificación de 2FA se fijó **`otplib@12`**
+  — la API estable y ubicua, sin CVEs. No es un atajo: es elegir la herramienta probada para una
+  pieza de seguridad.
+- **`@nestjs/common` (Nest 11) no exporta `TooManyRequestsException`.** Se usa
+  `new HttpException(msg, HttpStatus.TOO_MANY_REQUESTS)` para el 429 de fuerza bruta.
+- **`@nestjs/jwt` v12** tipa `expiresIn` como `number | StringValue` (plantilla del paquete `ms`).
+  Un `string` plano de una variable de entorno no encaja — se pasa el TTL ya convertido a
+  **segundos** (`durationToSeconds`), sin `as any`.
+- Directorios `dist/`/`storage/` root en el bind-mount del host (los escribe el contenedor). No
+  ensucian el commit (gitignore), pero el `tsc` local necesitaba `rm -rf dist` (vía un contenedor
+  efímero) antes de correr — Nest los recrea igualmente.
+
+### 3.3 Verificación real (curl contra el backend en vivo)
+
+- **Anti-enumeración**: `login/step1` responde `{"next":"password"}` idéntico exista o no el correo.
+- **Registro** → 201 + cookies httpOnly (`access_token`, `refresh_token`); `GET /auth/me` →
+  `roleName:"usuario"`.
+- **`ValidationPipe`**: contraseña `"corta"` → 400; propiedad `role_id` extra en el body → 400.
+- **RBAC**: `usuario` → `GET /users` 403; `admin` → 200.
+- **Jerarquía de roles** (admin = nivel 3): crear rol nivel 4 → 403; nivel 2 → 201; `DELETE`
+  de un rol `is_system` → 409.
+- **Jerarquía de cuentas**: admin crea `director` → 403; crea `manager` → 201.
+- **`max_count`**: `super` intenta un 2º `director` → 409.
+- **Refresh**: 1ª rotación → 200; reusar el refresh viejo (fuera de la gracia) → 401; la sesión
+  rotada también queda revocada (cascada) → 401.
+- **Logout**: `/auth/me` 200 antes, 401 después.
+- **2FA completo**: `setup` (secreto + QR data URL) → `confirm-setup` con TOTP real → 10 códigos
+  de recuperación → `login/step2` ahora devuelve `{next:"2fa"}` sin sesión → `login/2fa` con TOTP
+  → 200 → el challenge token usado como cookie de acceso → 401 → `login/2fa` con un código de
+  recuperación → 200 → reusar el mismo código de recuperación → 401.
+- **Fuerza bruta**: 10 intentos con contraseña incorrecta → 401; 11º y 12º → 429; fila real en
+  `security_events` (`type=login_bruteforce`, `attempts=10`, `status=nuevo`).
+- `tsc` limpio; 11 tests de `jest` (utilidades puras) verdes. Datos de prueba borrados después
+  (BD de vuelta a las 6 cuentas + 6 roles sembrados).

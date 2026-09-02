@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { Public } from '../auth/decorators/public.decorator';
 
 /** Forma de la respuesta de `GET /health`. */
 interface HealthReport {
@@ -33,6 +34,7 @@ export class HealthController {
    * @returns Estado global (`ok` solo si PostgreSQL y Redis respondieron),
    *          el detalle por dependencia y la marca de tiempo ISO-8601.
    */
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Estado del servicio y sus dependencias' })
   async check(): Promise<HealthReport> {

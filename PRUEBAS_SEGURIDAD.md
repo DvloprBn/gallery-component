@@ -12,8 +12,24 @@
 > Arranca **vacío**: sin endpoints todavía no hay nada que probar. Se llena en paralelo a cada
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
-Estado global: **Fase 1 completada — solo existe `GET /health` (sin auth, sin datos sensibles).
-Las pruebas de OWASP API Top 10 y del bloque de archivos arrancan con la Fase 2/3.**
+Estado global: **Fase 2 (identidad) completada.** Verificados con `curl` contra el backend en vivo
+los puntos de OWASP API Top 10 que aplican a identidad (ver más abajo). El bloque de **seguridad
+de archivos** (F1–F14) arranca con la Fase 3 (media).
+
+### OWASP API Security Top 10 — cobertura tras la Fase 2
+
+| # | Categoría | Estado |
+|---|---|---|
+| API1 — IDOR | ✅ Parcial: `/users/:id`, `/roles/:id` filtran por jerarquía, no solo por `:id`. El grueso (media privada) llega en la Fase 3. |
+| API2 — Broken Authentication | ✅ Probado: anti-enumeración (`login/step1` idéntico), challenge token de 2FA nunca es sesión (401 en `/auth/me`), logout revoca el refresh en BD, reuso de refresh → cascada, JWT `HS256` fijo. |
+| API3 — Mass Assignment | ✅ Probado: propiedad extra en el body (`role_id` en registro) → 400 por `forbidNonWhitelisted`. |
+| API4 — Unrestricted Resource Consumption | ✅ Probado: 10 fallos de login → 429 + fila `security_events`; mismo mecanismo en 2FA. Falta el límite de subida (Fase 3). |
+| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409). |
+| API6 — Sensitive Business Flows | ✅ Parcial: registro y login limitados por el mismo mecanismo de API4. |
+| API7 — SSRF | No aplica todavía (sin "importar imagen por URL" ni OAuth). |
+| API8 — Security Misconfiguration | ✅ helmet, CORS explícito, Swagger solo dev, secretos fuera de git. |
+| API9 — Improper Inventory Management | ⬜ Pendiente de confirmar en runtime de producción. |
+| API10 — Unsafe Consumption of APIs | No aplica todavía. |
 
 ### Configuración de seguridad ya verificada en la Fase 1
 
@@ -29,9 +45,24 @@ Las pruebas de OWASP API Top 10 y del bloque de archivos arrancan con la Fase 2/
 - [x] Swagger / `api-json` servidos **solo** si `NODE_ENV !== 'production'`.
 - [x] Secretos fuera de git (`.env` en `.gitignore`), con entropía real (`openssl rand`), propios
       de este proyecto (no compartidos con ningún otro).
-- [ ] Cookies de sesión `httpOnly` + `secure` en prod + `SameSite` — se implementa en la Fase 2.
-- [ ] Algoritmo JWT fijado explícito (`HS256`) — Fase 2.
-- [ ] Rate limiting dedicado — Fase 2.
+### Añadido y verificado en la Fase 2
+
+- [x] Cookies de sesión `httpOnly`, `sameSite: 'lax'`, `secure` en producción, `domain` opcional
+      (`COOKIE_DOMAIN`) — `src/auth/cookies.ts`.
+- [x] Algoritmo JWT fijado explícito a `HS256` en firma **y** verificación (`AuthModule`,
+      `JwtStrategy`) — nunca se negocia con el cliente.
+- [x] Access token en cookie httpOnly; refresh token opaco de 256 bits, en BD solo su `sha256`
+      (indexable, sin coste bcrypt donde no aporta).
+- [x] Rotación de refresh con ventana de gracia (10 s); reuso fuera de la ventana ⇒ revocación en
+      cascada de **todas** las sesiones de la cuenta.
+- [x] Rate limiting / fuerza bruta dedicado en login (10/15 min), 2FA (5/15 min) y reuso de
+      refresh, por debajo del límite global — `SecurityEventsService`.
+- [x] Secreto TOTP cifrado en reposo (AES-256-GCM, llave propia ≠ `JWT_SECRET`); códigos de
+      recuperación hasheados (bcrypt), de un solo uso.
+- [x] Candado de jerarquía en `roles` y `users`: nadie crea/gestiona un rol o cuenta de nivel ≥ al
+      suyo (bloquea la auto-escalación de privilegios).
+- [x] Cambio/reset de contraseña revoca todas las sesiones de refresh de la cuenta.
+- [x] Anti-enumeración de cuentas en `login/step1` y `forgot-password` (respuesta genérica).
 
 ### Deuda de seguridad conocida
 

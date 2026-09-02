@@ -9,6 +9,21 @@
 
 ## 1. Dónde estamos
 
+**Fase 2 (identidad) — completada y verificada de punta a punta (2026-09-01).**
+
+- Módulos reales: `auth` (login en 3 pasos, registro con auto-login, refresh con rotación +
+  ventana de gracia + revocación en cascada, logout, `/me`, cambio y recuperación de contraseña),
+  `two-factor` (TOTP real: setup + QR, confirm con 10 códigos de recuperación, disable, regenerate),
+  `roles` (CRUD dinámico + candado de jerarquía), `users` (`assertCanManageRole` + `max_count`),
+  `security-events` (fuerza bruta en Redis para login/2FA/reuso de refresh), `mail` (Resend con
+  degradación elegante). Guards globales `JwtAuthGuard` + `RolesGuard`.
+- Seed idempotente: 6 roles (`usuario`=0 … `super`=5) + 6 cuentas de prueba
+  (`<rol>+gallery@example.com`, contraseña `TestOnly123!`).
+- 11 tests `jest` (utilidades puras: AES-256-GCM, TOTP, escape HTML) verdes. Verificación real
+  con `curl` de todos los flujos — detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §3.
+- **Decisión técnica**: `otplib` fijado en la v12 (la v13 es una reescritura ESM/async; para 2FA
+  se prefiere la API estable y probada).
+
 **Fase 1 (núcleo / infraestructura) — completada y verificada de punta a punta (2026-09-01).**
 
 - Documentación autocontenida completa (8 archivos), con las **7 decisiones de `PLAN_DESARROLLO.md`
@@ -46,10 +61,12 @@
 
 ## 4. Próximo paso
 
-**Fase 2 — Identidad** (`PLAN_DESARROLLO.md` §10): módulos `auth` (login en 3 pasos, refresh con
-rotación, logout, cambio/recuperación de contraseña), `roles` (CRUD dinámico + jerarquía),
-`users` (`assertCanManageRole`), `two-factor` (TOTP), `security-events` (fuerza bruta), `mail`.
-Más `prisma/seed.ts` con roles y cuentas de prueba, y los primeros `*.spec.ts`.
+**Fase 3 — Media core** (`PLAN_DESARROLLO.md` §10): `StorageService` abstracto (driver disco +
+driver Cloudinary), pipeline de subida seguro (`sharp` re-encode, tiro de EXIF, `file-type` por
+magic bytes, `limitInputPixels`), modelo `albums`/`images`/`image_variants`, derivados
+responsivos, URLs firmadas para media privada. Necesita decidir el manejo del `file-type` v22
+(ESM) o fijar la v16 (CJS). Tests de integración de la jerarquía (`users.service.spec.ts` /
+`roles.service.spec.ts`) pendientes de la Fase 2 — se pueden añadir en paralelo.
 
 ---
 
@@ -57,6 +74,7 @@ Más `prisma/seed.ts` con roles y cuentas de prueba, y los primeros `*.spec.ts`.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-01 | **Fase 2 (identidad) completada y verificada.** Utilidades puras con tests (`crypto.util` AES-256-GCM, `totp.util` RFC 6238, `escape-html.util`, `token.util`, `duration.util`) — 11 tests `jest` verdes. Módulos: `auth` (login 3 pasos en pantallas separadas con challenge token de 5 min entre contraseña y 2FA, registro con auto-login, `refresh` con rotación + gracia de 10 s + revocación en cascada por reuso, `logout`, `/me`, cambio y recuperación de contraseña; JWT `HS256` fijo, access en cookie httpOnly, refresh opaco con solo su `sha256` en BD), `two-factor` (TOTP real vía `otplib` v12, secreto cifrado AES-256-GCM, QR real, 10 códigos de recuperación de un solo uso), `roles` (CRUD dinámico + candado de jerarquía + protección de roles `is_system`), `users` (`assertCanManageRole` + `max_count` sobre cuentas activas, vista segura sin secretos), `security-events` (fuerza bruta en Redis: login 10/15min, 2FA 5/15min, reuso de refresh; fila real + alerta por correo al cruzar umbral), `mail` (Resend por `fetch`, degradación elegante). Guards globales `JwtAuthGuard` (todo exige sesión salvo `@Public()`) + `RolesGuard`. Seed idempotente (6 roles, 6 cuentas de prueba). **Verificado con `curl`**: anti-enumeración, `ValidationPipe` (whitelist), RBAC 403/200, jerarquía de roles y cuentas, `max_count` (2º director → 409), rotación de refresh + reuso → 401 + cascada, logout, 2FA completo (TOTP + código de recuperación, un solo uso, challenge token nunca es sesión), fuerza bruta (10 fallos → 429 + fila `security_events`). **Hallazgos**: `otplib` 13 es reescritura ESM/async → fijado v12; Nest 11 no exporta `TooManyRequestsException` → `HttpException`+`HttpStatus.TOO_MANY_REQUESTS`; `@nestjs/jwt` v12 tipa `expiresIn` estricto → se pasa en segundos. Datos de prueba borrados tras verificar. `tsc` limpio. |
 | 2026-09-01 | **Encuadre confirmado: la galería es una demo de vitrina DENTRO del portafolio DvloprBn**, no un producto ni un sistema independiente. Su fin es comercial (mostrar capacidad a clientes potenciales). Se desarrolla autónoma aquí (patrón OmniUser) y se integra/enlaza desde el portafolio. Nueva decisión abierta **D8** (`PLAN_DESARROLLO.md` §4): modelo de integración — subdominio propio enlazado (lo que se está construyendo) vs. módulo dentro del código del portafolio reusando su auth. No bloquea las fases de backend; se resuelve antes de la Fase 4 (frontend) y del despliegue. El estándar de calidad sube, no baja: al ser una herramienta de venta, cada detalle (seguridad, rendimiento, pulido) tiene que verse de producción. |
 | 2026-09-01 | **Cloudinary + Resend resueltos: cuenta compartida con el portafolio DvloprBn.** La galería vivirá en el mismo dominio que `projects/dvlopr-bn`, así que reutiliza sus credenciales de Cloudinary (`CLOUDINARY_CLOUD_NAME`/`API_KEY`/`API_SECRET`) y su `RESEND_API_KEY` — cargadas en `gallery/.env` (ignorado por git), placeholders en `.env.example` (repo público). `CLOUDINARY_FOLDER=gallery` aísla los recursos dentro de la cuenta compartida. En dev sigue `STORAGE_DRIVER=disk`. Riesgo asumido y documentado: un leak de esa credencial afecta a ambos proyectos. |
 | 2026-09-01 | **Fase 1 (núcleo/infra) completada y verificada de punta a punta.** Monorepo `gallery_backend` (NestJS 11) + `gallery_frontend` (Next 16 / React 19) + `docker-compose.yml` (Postgres 18, Redis 8, ambos solo `127.0.0.1` + healthcheck). Backend: `main.ts` con helmet + CORS explícito + `ValidationPipe` whitelist + cookie-parser + Swagger dev; `PrismaService` con el **driver adapter de Prisma 7** (`@prisma/adapter-pg` + `pg`; la URL vive en `prisma.config.ts`, ya no en el schema); `RedisService` (ioredis); `validateEnv` al arranque; `GET /health` que verifica Postgres y Redis en vivo. Schema congelado migrado (`20260901235839_init`, 11 tablas). Frontend: landing placeholder + piso de `prefers-reduced-motion`. **Verificado**: `docker compose up -d --build` → 4 contenedores arriba; `/health` `200` `{"status":"ok","checks":{"database":true,"redis":true}}`; frontend `200`; `tsc` 0 errores. **Hallazgos** (detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §2): Prisma 7.10 quitó `url` del schema y exige driver adapter + `prisma.config.ts` + carga manual de `.env`; `migrate reset` bloqueado para agentes de IA (se recreó el volumen de la BD en su lugar); `postgres:18-alpine` monta el volumen en `/var/lib/postgresql`, no `/data`; 3040/3041/5437/5522 estaban ocupados por otro stack → puertos reasignados a 3050/3051/5438/6383/5523/8098/8099. `npm audit`: 4 *high* en transitivas del CLI de Prisma (devDep, sin ruta alcanzable — usamos Postgres), sin fix sin bajar a Prisma 6; en seguimiento. Primer commit del repo git propio. |

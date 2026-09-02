@@ -23,7 +23,7 @@ export default defineConfig({
   schema: path.join('prisma', 'schema.prisma'),
   migrations: {
     path: path.join('prisma', 'migrations'),
-    // seed: se añade en la Fase 2, cuando exista prisma/seed.ts.
+    seed: 'ts-node prisma/seed.ts',
   },
   datasource: {
     url: process.env.DATABASE_URL,
