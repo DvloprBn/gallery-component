@@ -92,13 +92,17 @@ export function Lightbox({
       >
         ‹
       </button>
-      <img
-        key={current.imageId}
-        className="g-lightbox-img"
-        src={current.urls.large ?? current.urls.medium ?? current.urls.original}
-        alt={current.altText ?? ''}
-        onClick={(event) => event.stopPropagation()}
-      />
+      <figure className="g-lightbox-frame" onClick={(event) => event.stopPropagation()}>
+        <img
+          key={current.imageId}
+          className="g-lightbox-img"
+          src={current.urls.large ?? current.urls.medium ?? current.urls.original}
+          alt={current.altText ?? ''}
+        />
+        {current.caption ? (
+          <figcaption className="g-lightbox-caption">{current.caption}</figcaption>
+        ) : null}
+      </figure>
       <button
         className="g-lightbox-nav g-next"
         aria-label="Siguiente"
@@ -109,8 +113,10 @@ export function Lightbox({
       >
         ›
       </button>
-      {current.caption ? (
-        <p className="g-lightbox-caption">{current.caption}</p>
+      {index !== null ? (
+        <span className="g-lightbox-count">
+          {index + 1} / {images.length}
+        </span>
       ) : null}
     </div>
   );

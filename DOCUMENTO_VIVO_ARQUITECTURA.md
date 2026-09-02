@@ -856,3 +856,63 @@ Postgres/Redis sin puertos al host; solo Caddy expone 80/443.
   §7.
 - El build de producción del backend sigue pasando con el plugin de swagger activo
   (`dist/main.js`, `prisma` presente en el runtime).
+
+---
+
+## 9. Pulido posterior (2026-09-01)
+
+Tras completar las 9 fases: más pruebas, verificación real de Cloudinary, y pulido visual de las
+superficies de vitrina.
+
+### 9.1 Pruebas — de 11 a 36 (8 suites)
+
+- **Puras nuevas**: `slug.util.spec.ts`, `media-signing.spec.ts` (HMAC: firma válida / manipulada /
+  de otra clave / expirada / campos faltantes).
+- **`image-pipeline.service.spec.ts`**: procesa un JPEG válido (original normalizado + 4 derivados
+  WebP + placeholder BlurHash), **confirma que el EXIF se elimina** del original servido, rechaza
+  texto que no es imagen, rechaza SVG, rechaza una imagen de 81 MP (decompression bomb).
+- **`roles.service.spec.ts` / `users.service.spec.ts`** — integración contra el **Postgres real**
+  de desarrollo (`TestingModule` no, `new PrismaService()` directo). Prueban la regla de jerarquía:
+  no crear/gestionar un rol o cuenta de nivel ≥ al propio, `is_system` protegido, no borrar rol con
+  cuentas, `max_count` contra cuentas activas, exclusión de la propia cuenta al reconfirmar su rol,
+  no gestionarse a sí mismo. Cada `expect().rejects` confirma además que el estado en Postgres **no
+  cambió**. `afterAll` borra los datos de prueba (BD verificada limpia después).
+- **`test/setup-integration.ts`**: dentro del contenedor usa `DATABASE_URL` tal cual; desde el host
+  carga `../.env` y reescribe `@gallery_db:5432` → `@localhost:5438`. Añadido a `jest.setupFiles`.
+
+### 9.2 Cloudinary — verificado de verdad (no solo el driver de disco)
+
+Con `STORAGE_DRIVER=cloudinary` y `CLOUDINARY_FOLDER=gallery_devtest` (carpeta aislada de la cuenta
+compartida), corriendo `seed-demo` + pruebas manuales:
+
+- **Álbum público**: las URLs son `res.cloudinary.com/<cloud>/image/upload/gallery_devtest/<uuid>`
+  — **sin firma**; `GET` → 200 `image/webp` (servido por el CDN de Cloudinary).
+- **Álbum privado**: las URLs son `.../image/**authenticated**/**s--<sig>--**/v1/gallery_devtest/<uuid>`
+  — recurso `authenticated` + firma de Cloudinary con expiración. `GET` con la firma → 200; `GET`
+  quitando el segmento `/s--…--/` → **401**.
+- **Borrado**: al eliminar los álbumes, `CloudinaryStorageDriver.remove` → `uploader.destroy` de
+  cada imagen y derivado. Confirmado por la API de Cloudinary que la carpeta `gallery_devtest`
+  quedó en **0 recursos** (`upload` y `authenticated`) — sin huérfanos.
+
+Después se revirtió `.env` a `STORAGE_DRIVER=disk` y se re-sembró la demo local.
+
+### 9.3 Pulido visual (superficies de vitrina)
+
+- **Landing** (`/`): encabezado con título en degradado, medida de lectura acotada, cuadrícula de
+  galerías con tarjetas que se elevan al hover (sombra + borde).
+- **Galería pública** (`/g/[slug]`): tipografía y espaciado del encabezado más finos; las imágenes
+  se elevan levemente al hover en masonry/grid/justified (anulado con `prefers-reduced-motion`).
+- **Lightbox**: fondo con `backdrop-filter: blur`, contador `n / total`, imagen con sombra y
+  zoom-in sutil al abrir, pie de foto enmarcado bajo la imagen, botones tipo "pill" con blur.
+- Studio y administración se dejaron como estaban — son herramientas de operación, ya suficientemente
+  limpias.
+
+### 9.4 Hallazgo de entorno de desarrollo
+
+Un `tsconfig.build.tsbuildinfo` presente en el árbol montado del backend hace que, tras un
+`docker compose up --force-recreate`, el `nest start --watch` **no emita `dist/main.js`** (tsc
+incremental lo cree "al día") y el contenedor entre en bucle con `Cannot find module '/app/dist/main'`.
+Se resuelve borrando `dist/` + `*.tsbuildinfo` dentro del contenedor y reiniciando. Regla: no
+correr `tsc -p tsconfig.build.json` desde el host contra el directorio del backend — los
+typechecks manuales van con `tsc -p tsconfig.json` (config base). `*.tsbuildinfo` está en
+`.gitignore` y `.dockerignore`.

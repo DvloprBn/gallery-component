@@ -99,8 +99,12 @@ subir imágenes, editar tema) y **Administración** (usuarios y roles).
 ## Pruebas
 
 ```bash
-docker compose exec gallery_backend npm test   # 11 tests jest (utilidades puras)
+docker compose exec gallery_backend npm test
 ```
+
+36 tests, 8 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb) y dos
+suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas).
 
 ## Producción (galeria.dvloprbn.dev)
 
