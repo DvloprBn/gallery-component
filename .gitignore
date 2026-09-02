@@ -1,34 +1,79 @@
-# Dependencias
-**/node_modules/
-
-# Builds / cachés
-**/dist/
-**/.next/
-**/out/
-**/build/
-**/coverage/
-*.tsbuildinfo
-
-# Prisma — cliente generado (se regenera con `prisma generate`); las
-# migraciones SÍ se versionan.
-**/generated/
-**/.prisma/
-
-# Entorno — NUNCA subir secretos reales
+# Secretos y entorno
 .env
 .env.local
 .env.*.local
 .env.prod
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Almacenamiento local de media (driver disco en desarrollo)
+# Dependencias
+node_modules/
+# Sin la barra inicial: el patrón aplica a CUALQUIER carpeta con ese nombre,
+# no solo a ./node_modules — que es lo que hace falta en este monorepo
+# (gallery_backend/node_modules, gallery_frontend/node_modules).
+node_modules
+
+# Builds
+dist/
+build/
+.next/
+out/
+dist
+build
+.next
+out
+*.tsbuildinfo
+
+# Cliente de Prisma generado (se regenera, no se versiona)
+generated/
+**/.prisma/
+
+# Documentación compilada (MkDocs y Compodoc)
+docs/site/
+gallery_backend/documentation/
+
+# Almacenamiento local de media (driver de disco en desarrollo)
 gallery_backend/storage/
 /storage/
 
-# Logs y sistema
+# Logs
+logs
 *.log
 npm-debug.log*
-.DS_Store
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Salida compilada de MkDocs y Compodoc
-docs/site/
-gallery_backend/documentation/
+# Tests
+coverage
+.nyc_output
+
+# Editor / OS
+.DS_Store
+.idea/
+.project
+.classpath
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Temporales / archivos personales
+.temp
+.tmp
+*.tar.gz
+*.zip
