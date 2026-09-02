@@ -117,15 +117,16 @@ Mismo stack en todas las capas, sin variarlo sin confirmarlo:
 
 > El dueño confirmó ("adelante, continúa") avanzar con los defaults propuestos. Quedan como
 > decisiones firmes; cualquiera se puede revisar más adelante por migración, pero el código ya
-> se construye sobre ellas. **D3 resuelto como Cloudinary** (2026-09-01) — la cuenta y las
-> credenciales las crea el dueño y se cargan al `.env` después; el código se construye contra la
-> abstracción `StorageService` con driver de disco en desarrollo mientras tanto.
+> se construye sobre ellas. **D3 resuelto como Cloudinary** (2026-09-01): la galería vive en el
+> mismo dominio que el portafolio DvloprBn y **reutiliza su cuenta de Cloudinary y su llave de
+> Resend** (mismas credenciales del `.env` de `projects/dvlopr-bn`, ya cargadas en `gallery/.env`).
+> `CLOUDINARY_FOLDER=gallery` aísla los recursos de la galería dentro de esa cuenta compartida.
 
 | # | Decisión | Resuelto | Por qué |
 |---|---|---|---|
 | **D1** | ¿Multiusuario o galería única? | ✅ **Multiusuario** — cada usuario es dueño de sus álbumes | Una galería única es un subcaso trivial del multiusuario; lo contrario obliga a rehacer el schema. Generaliza mejor a un cliente desconocido (§5). |
 | **D2** | ¿Existen imágenes privadas? | ✅ **Sí** — visibilidad `public` / `unlisted` / `private` por álbum | Sin visibilidad privada no hay nada que proteger y las pruebas de seguridad de media (IDOR, URLs firmadas) pierden sentido. |
-| **D3** | Almacenamiento | ✅ **Cloudinary** como servicio gestionado (storage + CDN + entrega). `StorageService` abstracto con driver disco en dev y driver Cloudinary en prod. **La seguridad no se delega**: el backend sigue haciendo validación por contenido + re-encode con `sharp` + tiro de EXIF *antes* de subir el derivado limpio a Cloudinary. Credenciales pendientes de que el dueño cree la cuenta. | Cloudinary da entrega optimizada y `authenticated` delivery para privadas; correr el pipeline propio antes mantiene el control de seguridad (mismo criterio de "nunca confiar en el cliente"). |
+| **D3** | Almacenamiento | ✅ **Cloudinary** (storage + CDN + entrega), **cuenta compartida con el portafolio DvloprBn** — mismo dominio. `StorageService` abstracto: driver disco en dev, driver Cloudinary en prod, `CLOUDINARY_FOLDER=gallery` para aislar recursos. **La seguridad no se delega**: el backend hace validación por contenido + re-encode con `sharp` + tiro de EXIF *antes* de subir el derivado limpio. Credenciales ya cargadas en `gallery/.env`. | Reutilizar la cuenta del portafolio evita gestionar otra; correr el pipeline propio antes mantiene el control de seguridad (nunca confiar en el cliente). Riesgo asumido: un leak de la credencial en un proyecto afecta al otro — aceptable por ser el mismo ecosistema/dominio del dueño. |
 | **D4** | Librería de animación | ✅ **Framer Motion** para orquestación; CSS puro para lo simple | Encaja natural con React 19 / Next 16, API declarativa, `prefers-reduced-motion` de fábrica. GSAP solo si hace falta control fino de timeline. |
 | **D5** | 2FA (TOTP) para cuentas administrativas | ✅ **Incluido** desde la primera versión | Seguridad prioridad #1 salga o no a producción; el admin controla todo el contenido. Patrón probado, costo marginal bajo. |
 | **D6** | Nombre del producto / paquetes | ✅ Paquetes: `gallery_backend` / `gallery_frontend`. Nombre de marca: **pendiente, no bloqueante** | Los nombres físicos ya son genéricos y seguros. El nombre comercial se fija en cualquier momento sin tocar código. |

@@ -28,11 +28,13 @@
 - **Puertos reales de este proyecto** (verificados libres): frontend `3051`, API `3050`,
   Postgres `5438`, Redis `6383` — solo `127.0.0.1` los de datos.
 
-## 2. Pendiente del dueño (no bloquea nada todavía; sí bloquea la Fase 3)
+## 2. Pendiente del dueño
 
-- **Cuenta de Cloudinary** — crearla y pasar `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` /
-  `CLOUDINARY_API_SECRET` al `.env`. Mientras tanto, `STORAGE_DRIVER=disk` (driver de disco en
-  desarrollo). Solo se necesita para la Fase 3 (media core).
+- **Cloudinary + Resend: resuelto (2026-09-01).** La galería vive en el mismo dominio que el
+  portafolio DvloprBn y reutiliza su cuenta de Cloudinary y su llave de Resend — credenciales
+  tomadas de `projects/dvlopr-bn/.env` y cargadas en `gallery/.env` (ignorado por git).
+  `CLOUDINARY_FOLDER=gallery` aísla los recursos. En desarrollo sigue `STORAGE_DRIVER=disk`
+  (no se ensucia la cuenta real con pruebas); se conmuta a `cloudinary` en la Fase 3 / producción.
 - Nombre de marca del producto (D6) — no bloqueante.
 
 ## 3. Deuda / seguimiento
@@ -55,6 +57,7 @@ Más `prisma/seed.ts` con roles y cuentas de prueba, y los primeros `*.spec.ts`.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-01 | **Cloudinary + Resend resueltos: cuenta compartida con el portafolio DvloprBn.** La galería vivirá en el mismo dominio que `projects/dvlopr-bn`, así que reutiliza sus credenciales de Cloudinary (`CLOUDINARY_CLOUD_NAME`/`API_KEY`/`API_SECRET`) y su `RESEND_API_KEY` — cargadas en `gallery/.env` (ignorado por git), placeholders en `.env.example` (repo público). `CLOUDINARY_FOLDER=gallery` aísla los recursos dentro de la cuenta compartida. En dev sigue `STORAGE_DRIVER=disk`. Riesgo asumido y documentado: un leak de esa credencial afecta a ambos proyectos. |
 | 2026-09-01 | **Fase 1 (núcleo/infra) completada y verificada de punta a punta.** Monorepo `gallery_backend` (NestJS 11) + `gallery_frontend` (Next 16 / React 19) + `docker-compose.yml` (Postgres 18, Redis 8, ambos solo `127.0.0.1` + healthcheck). Backend: `main.ts` con helmet + CORS explícito + `ValidationPipe` whitelist + cookie-parser + Swagger dev; `PrismaService` con el **driver adapter de Prisma 7** (`@prisma/adapter-pg` + `pg`; la URL vive en `prisma.config.ts`, ya no en el schema); `RedisService` (ioredis); `validateEnv` al arranque; `GET /health` que verifica Postgres y Redis en vivo. Schema congelado migrado (`20260901235839_init`, 11 tablas). Frontend: landing placeholder + piso de `prefers-reduced-motion`. **Verificado**: `docker compose up -d --build` → 4 contenedores arriba; `/health` `200` `{"status":"ok","checks":{"database":true,"redis":true}}`; frontend `200`; `tsc` 0 errores. **Hallazgos** (detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §2): Prisma 7.10 quitó `url` del schema y exige driver adapter + `prisma.config.ts` + carga manual de `.env`; `migrate reset` bloqueado para agentes de IA (se recreó el volumen de la BD en su lugar); `postgres:18-alpine` monta el volumen en `/var/lib/postgresql`, no `/data`; 3040/3041/5437/5522 estaban ocupados por otro stack → puertos reasignados a 3050/3051/5438/6383/5523/8098/8099. `npm audit`: 4 *high* en transitivas del CLI de Prisma (devDep, sin ruta alcanzable — usamos Postgres), sin fix sin bajar a Prisma 6; en seguimiento. Primer commit del repo git propio. |
 | 2026-09-01 | **Decisiones §4 confirmadas + inicio de Fase 1.** El dueño confirmó los 7 defaults propuestos (con D3 resuelto como **Cloudinary**: el backend corre igual su pipeline de seguridad — validación por contenido + re-encode con `sharp` + tiro de EXIF — *antes* de subir el derivado limpio a Cloudinary, que queda como almacén + CDN + entrega, no como límite de seguridad). Schema Prisma congelado. Marcas 🟡 retiradas de la documentación. Arranca la construcción de la Fase 1 (núcleo/infra) — ver `DOCUMENTO_VIVO_ARQUITECTURA.md` §2. |
 | 2026-09-01 | **Documentación inicial del proyecto, autocontenida.** Set completo de documentos creado (`CLAUDE.md`, `PLAN_DESARROLLO.md`, `DOCUMENTO_VIVO_ARQUITECTURA.md`, este archivo, `APRENDIZAJE.md`, `PRUEBAS_SEGURIDAD.md`, `BIBLIOGRAFIA.md`, `README.md`). Diseño técnico provisional: monorepo, puertos, schema identidad + media, pipeline de subida seguro en 10 pasos, servido con URLs firmadas, módulos y endpoints, objeto `theme` de personalización. Sin código de aplicación (modo diseño). |
