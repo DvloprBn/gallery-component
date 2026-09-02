@@ -814,3 +814,45 @@ Postgres/Redis sin puertos al host; solo Caddy expone 80/443.
   visible); `GET /api/auth/me` con esas cookies devuelve el usuario — el flujo de sesión funciona
   a través del reverse proxy sin CORS.
 - Imagen del frontend ≈ 68 MB (salida standalone).
+
+---
+
+## 8. Fase 8 — Documentación autogenerada (completada y verificada, 2026-09-01)
+
+### 8.1 Qué se creó
+
+- **Plugin de `@nestjs/swagger` en `nest-cli.json`** (`compilerOptions.plugins: ["@nestjs/swagger"]`)
+  — anota automáticamente los DTOs a partir de sus tipos, sin `@ApiProperty` a mano. El
+  `/api-json` pasó de **0 a 18 schemas** de componentes.
+- **`docs/`** — portal MkDocs Material (imagen `squidfunk/mkdocs-material:9.5.49` + plugin
+  `mkdocs-swagger-ui-tag`), 5 páginas: Inicio, Arquitectura, Jerarquía de roles, Seguridad, y
+  **API (OpenAPI)** con Swagger UI embebido en vivo (`<swagger-ui src=".../api-json"/>`).
+- **`gallery_compodoc`** — contenedor `node:22-slim` que reusa el `node_modules` del backend y
+  corre `compodoc -p tsconfig.json -d documentation -s -r 8080 --host 0.0.0.0 -w`. `@compodoc/compodoc`
+  se añadió como devDependency del backend.
+- Ambos servicios en `docker-compose.yml`, **solo en `127.0.0.1`** (8098 docs, 8099 compodoc) — un
+  portal de documentación interna es, en los hechos, un mapa de la arquitectura.
+- `ALLOWED_ORIGINS` del backend ganó `http://localhost:8098` para que el navegador pueda pedir el
+  `/api-json` desde el portal (CORS).
+
+### 8.2 Hallazgos
+
+- `compodoc` v2 renombró `--hostname` a **`--host`**; sin `--host 0.0.0.0` el servidor solo
+  escuchaba en el `localhost` del contenedor y el mapeo de puerto no llegaba.
+- **`npm ci` del build de producción falló** hasta regenerar `gallery_backend/package-lock.json`
+  (había cambiado `package.json`: `prisma` a `dependencies`, `@compodoc/compodoc` nuevo). `npm ci`
+  exige el lockfile sincronizado — se regeneró con `npm install --package-lock-only`.
+
+### 8.3 Verificación real
+
+- `GET http://localhost:3050/api-json` → 29 rutas, **18 schemas** de DTOs (el plugin de swagger
+  funciona). CORS desde `http://localhost:8098` → `Access-Control-Allow-Origin` correcto.
+- `gallery_docs` (`http://localhost:8098`) → las 5 páginas responden 200; `/api/` embebe el
+  `<swagger-ui>` apuntando al `/api-json` del backend.
+- `gallery_compodoc` (`http://localhost:8099`) → sirve la documentación con el grafo de
+  dependencias (14 módulos), y — confirmado — **parsea los comentarios TSDoc reales**: la página de
+  `AuthService` muestra el texto exacto del código ("Toda la lógica de identidad…", "login en 3
+  pasos…"), que es justamente para lo que existe el estándar de comentarios del `PLAN_DESARROLLO.md`
+  §7.
+- El build de producción del backend sigue pasando con el plugin de swagger activo
+  (`dist/main.js`, `prisma` presente en el runtime).

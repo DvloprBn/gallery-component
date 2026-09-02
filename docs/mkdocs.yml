@@ -1,0 +1,34 @@
+site_name: Galería — Documentación
+site_description: Demo de galería de imágenes con personalización y animaciones de grado profesional.
+
+theme:
+  name: material
+  language: es
+  palette:
+    scheme: slate
+    primary: deep orange
+    accent: deep orange
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search
+  - swagger-ui-tag
+
+nav:
+  - Inicio: index.md
+  - Arquitectura: arquitectura.md
+  - Jerarquía de roles: roles.md
+  - Seguridad: seguridad.md
+  - API (OpenAPI): api.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences

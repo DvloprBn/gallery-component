@@ -9,6 +9,17 @@
 
 ## 1. Dónde estamos
 
+**Fase 8 (documentación autogenerada) — completada y verificada (2026-09-01).**
+
+- Plugin `@nestjs/swagger` en `nest-cli.json` → `/api-json` con 18 schemas de DTOs (antes 0).
+- `docs/` — portal MkDocs Material (5 páginas: Inicio, Arquitectura, Roles, Seguridad, API con
+  Swagger UI embebido en vivo). Contenedor `gallery_docs` en `127.0.0.1:8098`.
+- `gallery_compodoc` (`127.0.0.1:8099`) — documentación autogenerada del backend; **verificado que
+  parsea los comentarios TSDoc reales** del código.
+- `ALLOWED_ORIGINS` ganó `http://localhost:8098` (CORS del `/api-json` para el portal).
+- **Hallazgos**: `compodoc` v2 usa `--host` (no `--hostname`); el `npm ci` de producción exigió
+  regenerar `package-lock.json` tras mover `prisma` a deps y añadir `@compodoc/compodoc`.
+
 **Fase 9 (despliegue) — artefactos listos y verificados en local (2026-09-01).**
 
 - `gallery_backend/Dockerfile` (multi-etapa: `npm ci` → `prisma generate` → `nest build` → prune;
@@ -125,16 +136,17 @@
 
 ## 4. Próximo paso
 
-**Fase 8 — Docs autogenerada**: portal `docs/` (MkDocs Material + Swagger UI consumiendo
-`/api-json`) + `@nestjs/swagger` decorando controllers/DTOs + Compodoc del backend; 2 contenedores
-nuevos solo en `127.0.0.1`.
+Las fases planificadas (`PLAN_DESARROLLO.md` §10) están **todas completas**: 1 infra · 2 identidad ·
+3 media · 4 galería pública · 5 Studio · 6 animación (resuelta con CSS en la Fase 4) · 7 seguridad
+transversal (`PRUEBAS_SEGURIDAD.md`) · 8 docs · 9 despliegue (artefactos).
 
-Cuando el dueño tenga el VPS y el DNS: desplegar con `docker-compose.prod.yml` (crear `.env.prod`
-desde el ejemplo, apuntar `galeria.dvloprbn.dev` al servidor, `docker compose -f
-docker-compose.prod.yml --env-file .env.prod up -d --build`).
+Lo que queda, cuando el dueño quiera:
 
-En paralelo (opcional): tests de integración de jerarquía/pipeline; probar
-`STORAGE_DRIVER=cloudinary` contra la cuenta real con `seed-demo`.
+1. **Desplegar de verdad**: VPS + DNS de `galeria.dvloprbn.dev` + `.env.prod` con secretos reales,
+   y `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`.
+2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
+3. Opcional: tests de integración de jerarquía/pipeline; probar `STORAGE_DRIVER=cloudinary` contra
+   la cuenta real con `seed-demo`; pulido visual del frontend.
 
 ---
 
@@ -142,6 +154,7 @@ En paralelo (opcional): tests de integración de jerarquía/pipeline; probar
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-01 | **Fase 8 (documentación autogenerada) completada y verificada.** Plugin `@nestjs/swagger` en `nest-cli.json` → `/api-json` pasa de 0 a **18 schemas** de DTOs sin `@ApiProperty` manual. `docs/` = portal MkDocs Material (`squidfunk/mkdocs-material:9.5.49` + `mkdocs-swagger-ui-tag`), 5 páginas (Inicio, Arquitectura, Jerarquía de roles, Seguridad, API con Swagger UI embebido en vivo). `gallery_compodoc` = contenedor `node:22-slim` que reusa el `node_modules` del backend y corre `compodoc -s -w` (`@compodoc/compodoc` añadido a devDependencies). Ambos en `docker-compose.yml` **solo `127.0.0.1`** (8098 docs, 8099 compodoc). `ALLOWED_ORIGINS` ganó `http://localhost:8098` (CORS del `/api-json`). **Hallazgos**: `compodoc` v2 renombró `--hostname`→`--host` (sin `--host 0.0.0.0` no llegaba el mapeo de puerto); el `npm ci` del build de producción falló hasta regenerar `gallery_backend/package-lock.json` (había cambiado `package.json`: `prisma`→dependencies, `@compodoc/compodoc` nuevo). **Verificado**: `/api-json` 29 rutas/18 schemas + CORS ok; las 5 páginas del portal → 200; `/api/` embebe el `<swagger-ui>`; compodoc sirve el grafo de 14 módulos y **parsea los TSDoc reales** (la página de `AuthService` muestra el texto exacto del código); el build de producción del backend sigue pasando con el plugin activo. |
 | 2026-09-01 | **Fase 9 (despliegue) — artefactos listos y verificados en local.** `gallery_backend/Dockerfile` (build multi-etapa: `npm ci` → `prisma generate` → `nest build` → `npm prune --omit=dev`; runtime `node:22-slim` usuario `node` con node_modules podado + `dist` + `prisma`; arranque = `migrate deploy` + seed roles/cuentas idempotente + `node dist/main.js`; `prisma` movido a `dependencies` para el `migrate deploy` de runtime). `gallery_frontend/Dockerfile` (multi-etapa con `output: 'standalone'`, imagen ≈68 MB; `NEXT_PUBLIC_API_BASE_URL=/api` como `ARG` de build — se hornea en `next build`). `Caddyfile` (un solo site: `/api/*`→backend, resto→frontend; TLS automático). `docker-compose.prod.yml` (Postgres/Redis **sin puertos publicados**; único puerto público = Caddy 80/443; `NODE_ENV=production`, `GLOBAL_PREFIX=api`, `STORAGE_DRIVER=cloudinary`, `env_file: .env.prod`). `.env.prod.example`. `main.ts` activa `trust proxy: 1` en producción (IP real del cliente para la fuerza bruta). **Hallazgos**: `nest build` metía todo en `dist/src/main.js` porque `tsconfig.build.json` incluía `prisma/` y `scripts/` → corregido con `include: ["src/**/*"]` + `rootDir: src` + excludes; el `tsconfig.build.tsbuildinfo` del host se colaba por `COPY . .` y tsc incremental no emitía nada → `*.tsbuildinfo` añadido al `.dockerignore`. **Verificado en local** (`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`, Caddy en `http://localhost`): 5 contenedores, migrate+seed al arrancar, `/api/health` ok, `/api/galleries` 200, `/` 200 (`<title>Galería</title>`, Next standalone), `/api/api-json` → **404** (Swagger off con `NODE_ENV=production`), login por el mismo origen con cookie `HttpOnly` y `/api/auth/me` devolviendo el usuario. Falta lo que no se puede hacer desde aquí: VPS, DNS de `galeria.dvloprbn.dev`, `.env.prod` real. |
 | 2026-09-01 | **Fase 5 (Studio + paneles, frontend) completada y verificada.** Infra de sesión en cliente: `apiFetch` (cookies httpOnly, `credentials: include`, `ApiError` con el mensaje de la API), `<AuthProvider>`/`useAuth()` (pide `/auth/me` al montar), `<RequireAuth roles>`, `SiteNav`. Rutas: `/login` (3 pasos en pantallas separadas + `<Suspense>` por `useSearchParams`), `/registro` (auto-login), `/cuenta` (cambio de contraseña + **activación de 2FA con QR real** + 10 códigos de recuperación mostrados una vez + desactivar con contraseña), `/studio` (lista de álbumes + crear con **todos los ajustes de una vez**: visibilidad, layout, tokens del tema), `/studio/[albumId]` (subir varios archivos con estado por archivo, rejilla editable — alt/pie inline, portada, borrar, **reordenar arrastrando** → `POST /images/reorder` —, ajustes del álbum, enlaces de compartir crear/listar/revocar, borrar álbum), `/admin` + `/admin/usuarios` (listar, alta con contraseña temporal, cambiar rol/estado) + `/admin/roles` (listar, crear, borrar) bajo `RequireAuth roles=['admin','director','super']`. **Backend menor**: `AuthenticatedUser` + `/auth/me` ganan `totpEnabled` (leído en vivo en `JwtStrategy`); `GET /albums/:id/share-tokens` nuevo (lista sin el token en claro). **Hallazgo**: `useSearchParams()` exige `<Suspense>` alrededor o `next build` falla al prerenderizar con una recursión engañosa en el runtime de Next. **Verificado con `curl`** (forma exacta de la UI): login 3 pasos + `totpEnabled`, crear álbum con `theme` anidado (persistido), subir imagen + `PATCH coverImageId` + `GET .../images` + `reorder`, share-tokens crear/listar/revocar; las 7 páginas nuevas → 200 SSR; `NODE_ENV=production next build` pasa (11 rutas); `tsc` backend limpio; 11 tests jest. |
 | 2026-09-01 | **D8 resuelto + Fase 4 (galería pública, frontend) completada y verificada.** D8: demo **autónoma con su propio ambiente** en **`galeria.dvloprbn.dev`** (subdominio del portafolio); un solo origen (API bajo `/api/*` vía reverse proxy → sin CORS en prod, cookies host-only); solo se comparten Cloudinary + Resend + el dominio raíz. `GLOBAL_PREFIX` (env, vacío en dev) sirve la API bajo `/api` en prod; bloque de producción de referencia añadido a `.env.example`. **Fase 4**: Next.js — `/g/[slug]` (Server Component, valida con Zod, `notFound()` sin acceso, `noindex` si no es público), índice `/` (`GET /galleries`, endpoint nuevo), `not-found`/`global-error` propias. 4 layouts en **CSS puro** (masonry/grid/justified/carousel); animación de entrada por `IntersectionObserver` + transición CSS escalonada; lightbox con teclado/Escape y transiciones CSS — **sin librería de animación** (`motion` se probó y se quitó: menos bundle, mejor rendimiento). `<img srcset>` de los 4 derivados + `sizes` por layout + `loading=lazy` + BlurHash en `<canvas>` detrás. Tema del álbum → CSS custom properties validadas con Zod. `scripts/seed-demo.ts` siembra una galería de demo por el flujo real (8 imágenes). **Hallazgo clave**: `next build` DEBE correr con `NODE_ENV=production` — el compose de dev fija `development` (correcto para `next dev`) y eso rompe el prerender de `/_global-error` con un `useContext` null engañoso; con `production` el build pasa. `fonts-dejavu-core` añadido al Dockerfile del backend (rasterizado de texto en el seed). **Verificado**: `seed-demo` → álbum público con 8 imágenes; `/` y `/g/<slug>` → 200 con el HTML SSR correcto (layout, `g-figure`×8, `g-reveal` escalonado, `srcSet`×4); `/g/no-existe` → 404; `NODE_ENV=production next build` pasa (`/` y `/g/[slug]` dinámicas); `tsc` backend limpio. |

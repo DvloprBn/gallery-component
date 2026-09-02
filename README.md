@@ -4,9 +4,9 @@ Galería de imágenes con personalización y animaciones de grado profesional. *
 vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
 atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado: Fases 1–5 + 9 completadas** (infraestructura · identidad · media core · galería
-> pública · Studio y paneles · **artefactos de despliegue**). Falta la documentación autogenerada
-> (Fase 8) y el despliegue real (VPS + DNS). Vivirá en `galeria.dvloprbn.dev`.
+> **Estado: todas las fases planificadas completas** (infra · identidad · media · galería pública ·
+> Studio · seguridad transversal · documentación autogenerada · artefactos de despliegue).
+> Queda el despliegue real (VPS + DNS de `galeria.dvloprbn.dev`) y enlazarla desde el portafolio.
 > Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
@@ -80,7 +80,8 @@ nivel igual o superior al suyo.
 - **Entrega pública**: `GET /galleries` (índice) · `GET /g/:slug` (galería) · `GET /media/:key`
   (archivos, driver de disco)
 
-Referencia completa en Swagger (`/docs`, solo dev).
+Referencia completa en Swagger (`http://localhost:3050/docs`, solo dev), en el portal de
+documentación (`http://localhost:8098`) y en Compodoc (`http://localhost:8099`).
 
 ## Ver la demo
 

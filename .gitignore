@@ -28,3 +28,7 @@ gallery_backend/storage/
 *.log
 npm-debug.log*
 .DS_Store
+
+# Salida compilada de MkDocs y Compodoc
+docs/site/
+gallery_backend/documentation/
