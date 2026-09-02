@@ -624,3 +624,79 @@ tiene; **compensación**: si la transacción falla, se borran los objetos ya sub
 - **Limpieza**: tras borrar imagen y álbum, la BD vuelve a 6 cuentas / 6 roles / 0 álbumes / 0
   imágenes / 0 variantes y **0 archivos** en el volumen de almacenamiento.
 - `tsc` limpio; 11 tests `jest` verdes.
+
+---
+
+## 5. Fase 4 — Galería pública (frontend) (completada y verificada, 2026-09-01)
+
+### 5.1 Qué se construyó
+
+**`lib/`**:
+- `gallery-schema.ts` — esquemas **Zod** de la respuesta de `GET /g/:slug` y del `theme`. El
+  `theme` es un objeto cerrado de tokens (`colors`/`typography`/`layout`/`motion`), cada valor
+  acotado a un rango; `.catch({})` descarta cualquier cosa fuera de esquema.
+- `theme.ts` — traduce el `theme` validado a **CSS custom properties** (`--g-bg`, `--g-accent`,
+  `--g-gap`, …). Nunca se inyecta un valor crudo en un `<style>`.
+- `api.ts` — `fetchGallery(slug, token)` y `fetchPublicGalleries()` desde Server Components,
+  usando `API_INTERNAL_URL` (red interna de Docker) con fallback a la URL pública.
+
+**Componentes** (`components/`):
+- `GalleryView` — aplica el tema, pinta el layout, gestiona el estado del lightbox.
+- `GalleryLayout` — 4 layouts en CSS puro: `masonry` (`column-count`), `grid` (recorte cuadrado
+  con `object-fit: cover`), `justified` (filas de alto igual con `flex-grow`/`flex-basis` por
+  aspect ratio + `::after { flex-grow: 999999 }`), `carousel` (`scroll-snap`). Animación de
+  entrada por `IntersectionObserver` que añade `.is-in`; el escalonado va en `--reveal-delay` y
+  la duración/preset (`fade-up`/`fade`/`zoom`) los da el `theme`.
+- `GalleryImage` — `<img>` con `srcset` de los 4 derivados + `sizes` por layout, `loading="lazy"`
+  (las 3 primeras `eager`), `decoding="async"`, `width`/`height` reales (sin layout shift) y un
+  `<BlurhashCanvas>` detrás que se desvanece al cargar la imagen.
+- `BlurhashCanvas` — decodifica el BlurHash a un `<canvas>` 32×32.
+- `Lightbox` — visor a pantalla completa, navegación con flechas/teclado, cierre con Escape o
+  clic en el fondo, transiciones CSS (`.is-open`), bloquea el scroll del body mientras está abierto.
+
+**Rutas** (`app/`):
+- `g/[slug]/page.tsx` — Server Component: pide y **valida con Zod** en el servidor, `notFound()`
+  si no hay galería; `generateMetadata` marca `noindex` si el álbum no es `public`.
+- `page.tsx` — índice de galerías públicas (`GET /galleries`).
+- `not-found.tsx`, `global-error.tsx` — páginas propias, mínimas.
+- Ambas rutas con datos en vivo son `export const dynamic = 'force-dynamic'`.
+
+**`scripts/seed-demo.ts`** (backend) — siembra una galería de demostración usando el **flujo real**
+(login → crear álbum público con tema propio → subir 8 imágenes por el pipeline). Idempotente. Se
+corre a mano: `docker compose exec gallery_backend npx ts-node scripts/seed-demo.ts`.
+
+**`GET /galleries`** (nuevo, `@Public()`) — índice de álbumes `public` recientes con la miniatura
+de portada.
+
+### 5.2 Decisiones / hallazgos
+
+- **`next build` DEBE correr con `NODE_ENV=production`.** El `docker-compose.yml` de desarrollo fija
+  `NODE_ENV=development` (correcto para `next dev`). Correr `next build` con ese valor hace fallar
+  el prerender de la página interna `/_global-error` con `TypeError: Cannot read properties of
+  null (reading 'useContext')` — un síntoma engañoso que no tiene que ver con el código de la app.
+  Con `NODE_ENV=production` el build pasa limpio. **A tener en cuenta en el `docker-compose.prod.yml`
+  de la Fase 9.**
+- **Sin librería de animación.** Se probó `motion`/`framer-motion` y se quitó: la animación de
+  entrada (fade-up escalonado al hacer scroll) y el lightbox se resuelven con
+  `IntersectionObserver` + transiciones CSS, sin JS de animación en el bundle — mejor rendimiento
+  para una galería con muchas imágenes, y una dependencia menos.
+- **Layouts en CSS, no en JS.** `justified` usa el truco de `flex-grow` por aspect ratio en vez de
+  un empaquetador de filas en JavaScript — aproximado pero sólido y sin coste de layout en cliente.
+- Las páginas con datos en vivo son `force-dynamic` (SSR por petición) — no se prerenderizan; para
+  SEO de galerías públicas basta el HTML completo por request (ISR queda como mejora futura).
+- **`fonts-dejavu-core` + `fontconfig`** añadidos al `Dockerfile.dev` del backend: sin ellos,
+  `sharp`/librsvg no rasteriza el texto de las imágenes generadas por el seed de demo (las subidas
+  reales rechazan SVG, así que no les afecta).
+
+### 5.3 Verificación real
+
+- `docker compose exec gallery_backend npx ts-node scripts/seed-demo.ts` → álbum público
+  "Demo — Galería de ejemplo" con 8 imágenes reales por el pipeline.
+- `GET http://localhost:3050/galleries` → 1 álbum con `coverUrl`.
+- `GET http://localhost:3051/` → 200, tarjeta del índice enlazando a `/g/<slug>`.
+- `GET http://localhost:3051/g/<slug>` → 200; el HTML SSR trae `<h1 class="g-title">`,
+  `g-layout--masonry`, 8 `g-figure` + 8 `g-blur` + 8 `g-reveal` con `data-preset="fade-up"` y
+  `--reveal-delay` escalonado; `<img srcSet>` con las 4 variantes por imagen.
+- `GET http://localhost:3051/g/no-existe` → 404 (página `not-found` propia).
+- `NODE_ENV=production npx next build` → **pasa**: `/` y `/g/[slug]` dinámicas, `/_not-found`
+  estática. `tsc` del backend limpio.

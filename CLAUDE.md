@@ -29,10 +29,11 @@ Objetivos reales:
    `docker-compose` autocontenible. Se desarrolla aquí de forma autónoma (mismo patrón con el que
    se hizo OmniUser) y se enlaza/integra desde el portafolio.
 
-> **Abierto — resolver antes del despliegue** (`PLAN_DESARROLLO.md` §4, D8): el *modelo* de
-> integración con el portafolio (subdominio propio enlazado, o módulo dentro del código del
-> portafolio reusando su auth). No bloquea las fases de backend; sí condiciona la Fase 4 (frontend)
-> y el despliegue.
+> **Resuelto (D8, `PLAN_DESARROLLO.md` §4)**: demo **autónoma con su propio ambiente** en el
+> subdominio **`galeria.dvloprbn.dev`** — stack propio, identidad propia, frontend propio; el
+> portafolio solo la enlaza. Un solo origen (API bajo `/api/*` del mismo host) → sin CORS en
+> producción, cookies host-only. Solo se comparten con el portafolio las cuentas de Cloudinary y
+> Resend.
 
 ---
 

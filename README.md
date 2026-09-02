@@ -4,8 +4,9 @@ Galería de imágenes con personalización y animaciones de grado profesional. *
 vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
 atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado: Fases 1–3 completadas y verificadas** (infraestructura · identidad · media core).
-> Sigue la Fase 4 (galería pública en el frontend). Ver `ESTADO_PROYECTO.md`.
+> **Estado: Fases 1–4 completadas y verificadas** (infraestructura · identidad · media core ·
+> galería pública). Falta el Studio (panel del dueño) y el despliegue. Vivirá en
+> `galeria.dvloprbn.dev`. Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
 
@@ -75,9 +76,19 @@ nivel igual o superior al suyo.
 - **Álbumes** (dueño o admin): `/albums` (CRUD) · `/albums/:id/share-tokens` (crear/revocar)
 - **Imágenes**: `POST /albums/:id/images` (subida) · `GET /albums/:id/images` ·
   `POST /albums/:id/images/reorder` · `PATCH /images/:id` · `DELETE /images/:id`
-- **Entrega pública**: `GET /g/:slug` (galería) · `GET /media/:key` (archivos, driver de disco)
+- **Entrega pública**: `GET /galleries` (índice) · `GET /g/:slug` (galería) · `GET /media/:key`
+  (archivos, driver de disco)
 
 Referencia completa en Swagger (`/docs`, solo dev).
+
+## Ver la demo
+
+```bash
+docker compose exec gallery_backend npx ts-node scripts/seed-demo.ts
+```
+
+Siembra una galería pública de ejemplo (8 imágenes por el pipeline real) y muestra su URL.
+Ábrela en http://localhost:3051 — el índice enlaza a `/g/<slug>`.
 
 ## Pruebas
 

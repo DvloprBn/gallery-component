@@ -9,6 +9,21 @@
 
 ## 1. Dónde estamos
 
+**Fase 4 (galería pública, frontend) — completada y verificada (2026-09-01).**
+
+- Next.js: `/g/[slug]` (Server Component, valida con Zod, `notFound()` sin acceso, `noindex` si no
+  es público), índice `/` (galerías públicas vía `GET /galleries`, endpoint nuevo), `not-found` y
+  `global-error` propias.
+- 4 layouts en **CSS puro** (masonry / grid / justified / carousel); animación de entrada por
+  `IntersectionObserver` + transición CSS escalonada; lightbox con teclado y transiciones CSS.
+  **Sin librería de animación** (`motion` se probó y se quitó — menos bundle, mejor rendimiento).
+- `<img>` con `srcset` de los 4 derivados + `sizes` por layout, `loading="lazy"`, BlurHash detrás.
+- Tema del álbum → CSS custom properties validadas con Zod (nunca CSS crudo).
+- `scripts/seed-demo.ts` (backend): siembra una galería de demo por el flujo real (8 imágenes).
+- **Hallazgo clave**: `next build` debe correr con `NODE_ENV=production` (el compose de dev fija
+  `development`, correcto para `next dev` pero rompe el prerender de `/_global-error`). Anotado
+  para la Fase 9.
+
 **Fase 3 (media core) — completada y verificada de punta a punta (2026-09-01).**
 
 - `storage`: `StorageService` abstracto + `DiskStorageDriver` (dev, con firma HMAC) y
@@ -78,12 +93,16 @@
 
 ## 4. Próximo paso
 
-**Fase 4 — Galería pública (frontend)** (`PLAN_DESARROLLO.md` §10): `/g/[slug]` en Next.js con los
-layouts (masonry / justified / grid / carousel), `next/image` con `srcset` desde los derivados,
-carga perezosa, placeholder BlurHash, lightbox base. **Depende de D8** (modelo de integración con
-el portafolio) — conviene resolverlo antes de invertir en el frontend. En paralelo (backend):
-tests de integración de la jerarquía y del pipeline; conmutar `STORAGE_DRIVER=cloudinary` y probar
-contra la cuenta real; el portal de documentación autogenerada (`docs/` + Compodoc).
+Opciones (elige el dueño):
+- **Fase 5 — Studio (frontend)**: login/registro en pantallas separadas, activación de 2FA (QR),
+  panel del dueño para crear álbumes, subir/reordenar imágenes y editar tema/layout en vivo;
+  panel de administración (usuarios/roles). Es lo que falta para que la demo sea "operable" de
+  punta a punta desde el navegador, no solo por `curl`.
+- **Fase 9 — Despliegue**: `docker-compose.prod.yml` + Caddy para `galeria.dvloprbn.dev` (API bajo
+  `/api/*`, `NODE_ENV=production`, `STORAGE_DRIVER=cloudinary`), Dockerfiles multi-etapa.
+- **Fase 8 — Docs autogenerada**: `docs/` (MkDocs + Swagger) + Compodoc.
+- En paralelo: tests de integración de jerarquía y pipeline; probar `STORAGE_DRIVER=cloudinary`
+  contra la cuenta real.
 
 ---
 
@@ -91,6 +110,7 @@ contra la cuenta real; el portal de documentación autogenerada (`docs/` + Compo
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-01 | **D8 resuelto + Fase 4 (galería pública, frontend) completada y verificada.** D8: demo **autónoma con su propio ambiente** en **`galeria.dvloprbn.dev`** (subdominio del portafolio); un solo origen (API bajo `/api/*` vía reverse proxy → sin CORS en prod, cookies host-only); solo se comparten Cloudinary + Resend + el dominio raíz. `GLOBAL_PREFIX` (env, vacío en dev) sirve la API bajo `/api` en prod; bloque de producción de referencia añadido a `.env.example`. **Fase 4**: Next.js — `/g/[slug]` (Server Component, valida con Zod, `notFound()` sin acceso, `noindex` si no es público), índice `/` (`GET /galleries`, endpoint nuevo), `not-found`/`global-error` propias. 4 layouts en **CSS puro** (masonry/grid/justified/carousel); animación de entrada por `IntersectionObserver` + transición CSS escalonada; lightbox con teclado/Escape y transiciones CSS — **sin librería de animación** (`motion` se probó y se quitó: menos bundle, mejor rendimiento). `<img srcset>` de los 4 derivados + `sizes` por layout + `loading=lazy` + BlurHash en `<canvas>` detrás. Tema del álbum → CSS custom properties validadas con Zod. `scripts/seed-demo.ts` siembra una galería de demo por el flujo real (8 imágenes). **Hallazgo clave**: `next build` DEBE correr con `NODE_ENV=production` — el compose de dev fija `development` (correcto para `next dev`) y eso rompe el prerender de `/_global-error` con un `useContext` null engañoso; con `production` el build pasa. `fonts-dejavu-core` añadido al Dockerfile del backend (rasterizado de texto en el seed). **Verificado**: `seed-demo` → álbum público con 8 imágenes; `/` y `/g/<slug>` → 200 con el HTML SSR correcto (layout, `g-figure`×8, `g-reveal` escalonado, `srcSet`×4); `/g/no-existe` → 404; `NODE_ENV=production next build` pasa (`/` y `/g/[slug]` dinámicas); `tsc` backend limpio. |
 | 2026-09-01 | **Fase 3 (media core) completada y verificada.** `storage` (abstracción + driver disco con firma HMAC + driver Cloudinary con `authenticated`/URL firmada); `media-processing` (pipeline `sharp`: valida por contenido — **se descartó `file-type`, es redundante y ESM-only** —, re-codifica quitando EXIF/GPS, 4 derivados WebP `thumb`/`small`/`medium`/`large`, BlurHash, `limitInputPixels` contra decompression bombs); `albums` (CRUD con visibilidad/layout/tema al crear, enlaces de compartir `album_share_tokens` con caducidad, `canManage` dueño-o-admin, 404 sin acceso, `theme` limitado a 4 KB); `images` (subida con rate limit 120/h + pipeline + transacción con compensación de objetos huérfanos, listado Studio, edición de metadatos, reordenado validado, borrado con limpieza); `media` (`GET /g/:slug` galería pública con control por visibilidad y token de compartir; `GET /media/:key` servido del driver de disco con firma HMAC para privados, `X-Content-Type-Options: nosniff`, cache según visibilidad). **Verificado con `curl` + `sharp`**: texto renombrado `.jpg` → 400, SVG con `<script>` → 400, JPEG con EXIF+GPS subido → **EXIF eliminado del original servido**, PNG 81 MP → 400 (`limitInputPixels`), archivo de 20 MB → 413 (interceptor), IDOR (otro usuario → 404/404/403), URL de privado firmada + `/media/:key` sin firma o manipulada → 404, galería privada sin token → 404 / con enlace de compartir → 200, cambio a `public` → thumb sin firma servido `image/webp`, limpieza total (BD 6/6/0/0/0, **0 archivos** en el volumen). **Hallazgo**: `theme` debe castearse a `Prisma.InputJsonValue`. `tsc` limpio, 11 tests jest verdes. |
 | 2026-09-01 | **Fase 2 (identidad) completada y verificada.** Utilidades puras con tests (`crypto.util` AES-256-GCM, `totp.util` RFC 6238, `escape-html.util`, `token.util`, `duration.util`) — 11 tests `jest` verdes. Módulos: `auth` (login 3 pasos en pantallas separadas con challenge token de 5 min entre contraseña y 2FA, registro con auto-login, `refresh` con rotación + gracia de 10 s + revocación en cascada por reuso, `logout`, `/me`, cambio y recuperación de contraseña; JWT `HS256` fijo, access en cookie httpOnly, refresh opaco con solo su `sha256` en BD), `two-factor` (TOTP real vía `otplib` v12, secreto cifrado AES-256-GCM, QR real, 10 códigos de recuperación de un solo uso), `roles` (CRUD dinámico + candado de jerarquía + protección de roles `is_system`), `users` (`assertCanManageRole` + `max_count` sobre cuentas activas, vista segura sin secretos), `security-events` (fuerza bruta en Redis: login 10/15min, 2FA 5/15min, reuso de refresh; fila real + alerta por correo al cruzar umbral), `mail` (Resend por `fetch`, degradación elegante). Guards globales `JwtAuthGuard` (todo exige sesión salvo `@Public()`) + `RolesGuard`. Seed idempotente (6 roles, 6 cuentas de prueba). **Verificado con `curl`**: anti-enumeración, `ValidationPipe` (whitelist), RBAC 403/200, jerarquía de roles y cuentas, `max_count` (2º director → 409), rotación de refresh + reuso → 401 + cascada, logout, 2FA completo (TOTP + código de recuperación, un solo uso, challenge token nunca es sesión), fuerza bruta (10 fallos → 429 + fila `security_events`). **Hallazgos**: `otplib` 13 es reescritura ESM/async → fijado v12; Nest 11 no exporta `TooManyRequestsException` → `HttpException`+`HttpStatus.TOO_MANY_REQUESTS`; `@nestjs/jwt` v12 tipa `expiresIn` estricto → se pasa en segundos. Datos de prueba borrados tras verificar. `tsc` limpio. |
 | 2026-09-01 | **Encuadre confirmado: la galería es una demo de vitrina DENTRO del portafolio DvloprBn**, no un producto ni un sistema independiente. Su fin es comercial (mostrar capacidad a clientes potenciales). Se desarrolla autónoma aquí (patrón OmniUser) y se integra/enlaza desde el portafolio. Nueva decisión abierta **D8** (`PLAN_DESARROLLO.md` §4): modelo de integración — subdominio propio enlazado (lo que se está construyendo) vs. módulo dentro del código del portafolio reusando su auth. No bloquea las fases de backend; se resuelve antes de la Fase 4 (frontend) y del despliegue. El estándar de calidad sube, no baja: al ser una herramienta de venta, cada detalle (seguridad, rendimiento, pulido) tiene que verse de producción. |

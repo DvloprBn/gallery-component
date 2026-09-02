@@ -43,8 +43,364 @@ a {
   color: rgba(245, 245, 247, 0.6);
 }
 
-/* Accesibilidad: respetar a quien pidió menos animación. Se refuerza por
-   componente en las fases de animación — este es el piso global. */
+/* Índice de galerías en la portada */
+.index-list {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.index-card a {
+  display: block;
+  text-decoration: none;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.index-card a:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.index-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.index-cover--empty {
+  background: linear-gradient(135deg, #1f1c2c, #3a6073);
+}
+
+.index-title {
+  display: block;
+  padding: 0.6rem 0.75rem 0.1rem;
+  font-weight: 600;
+}
+
+.index-meta {
+  display: block;
+  padding: 0 0.75rem 0.7rem;
+  font-size: 0.8rem;
+  color: rgba(245, 245, 247, 0.55);
+}
+
+/* ─────────────────────────── Galería pública ─────────────────────────── */
+
+.g-root {
+  /* Defaults del tema — el álbum los puede sobrescribir vía CSS custom
+     properties (ver lib/theme.ts). */
+  --g-bg: #0b0b0f;
+  --g-fg: #f5f5f7;
+  --g-accent: #ff5d3a;
+  --g-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --g-scale: 1;
+  --g-gap: 12px;
+  --g-radius: 8px;
+  --g-max-columns: 3;
+
+  min-height: 100vh;
+  background: var(--g-bg);
+  color: var(--g-fg);
+  font-family: var(--g-font);
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.g-header {
+  max-width: 70ch;
+  margin: 0 auto clamp(1.5rem, 5vw, 3rem);
+  text-align: center;
+}
+
+.g-title {
+  margin: 0 0 0.5rem;
+  font-size: calc(clamp(1.8rem, 4vw, 2.8rem) * var(--g-scale));
+  letter-spacing: -0.02em;
+}
+
+.g-description {
+  margin: 0 0 0.75rem;
+  opacity: 0.8;
+  font-size: calc(1rem * var(--g-scale));
+}
+
+.g-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--g-accent);
+}
+
+.g-empty {
+  text-align: center;
+  opacity: 0.6;
+  padding: 3rem 0;
+}
+
+/* Contenedor de cada imagen (elemento animado) */
+.g-item {
+  min-width: 0;
+}
+
+/* Animación de entrada — 100% CSS. El JS solo añade `.is-in` al entrar en
+   viewport (IntersectionObserver). `--reveal-delay` escalona por posición. */
+.g-reveal {
+  opacity: 0;
+  transition:
+    opacity var(--reveal-duration, 0.45s) ease-out,
+    transform var(--reveal-duration, 0.45s) ease-out;
+  transition-delay: var(--reveal-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.g-reveal[data-preset='fade-up'] {
+  transform: translateY(24px);
+}
+.g-reveal[data-preset='zoom'] {
+  transform: scale(0.94);
+}
+
+.g-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.g-figure {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--g-radius);
+  background: #16161c;
+  cursor: zoom-in;
+}
+
+.g-figure:focus-visible {
+  outline: 2px solid var(--g-accent);
+  outline-offset: 2px;
+}
+
+.g-blur {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  filter: blur(0.5px);
+}
+
+.g-img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.g-img[data-loaded='true'] {
+  opacity: 1;
+}
+
+.g-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 2;
+  padding: 1.5rem 0.75rem 0.6rem;
+  font-size: 0.8rem;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.g-figure:hover .g-caption,
+.g-figure:focus-within .g-caption {
+  opacity: 1;
+}
+
+/* --- Layout: masonry --- */
+.g-layout--masonry {
+  column-count: var(--g-max-columns);
+  column-gap: var(--g-gap);
+}
+
+.g-layout--masonry .g-item {
+  break-inside: avoid;
+  margin-bottom: var(--g-gap);
+}
+
+/* --- Layout: grid (recorte cuadrado) --- */
+.g-layout--grid {
+  display: grid;
+  grid-template-columns: repeat(var(--g-max-columns), 1fr);
+  gap: var(--g-gap);
+}
+
+.g-layout--grid .g-figure {
+  aspect-ratio: 1;
+}
+
+.g-layout--grid .g-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* --- Layout: justified (filas de alto igual) --- */
+.g-layout--justified {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--g-gap);
+}
+
+.g-layout--justified .g-figure {
+  height: 240px;
+}
+
+.g-layout--justified .g-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.g-layout--justified::after {
+  content: '';
+  flex-grow: 999999;
+}
+
+/* --- Layout: carousel (scroll horizontal con snap) --- */
+.g-layout--carousel {
+  display: flex;
+  gap: var(--g-gap);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 0.75rem;
+  scrollbar-width: thin;
+}
+
+.g-layout--carousel .g-item {
+  flex: 0 0 auto;
+  width: min(60vw, 720px);
+  scroll-snap-align: center;
+}
+
+@media (max-width: 1100px) {
+  .g-layout--masonry,
+  .g-layout--grid {
+    --g-max-columns: 2;
+  }
+}
+
+@media (max-width: 600px) {
+  .g-layout--masonry,
+  .g-layout--grid {
+    --g-max-columns: 1;
+  }
+  .g-layout--carousel .g-item {
+    width: 85vw;
+  }
+}
+
+/* --- Lightbox --- */
+.g-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.93);
+  padding: 2vh 1vw;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.g-lightbox.is-open {
+  opacity: 1;
+}
+
+.g-lightbox-img {
+  max-width: 92vw;
+  max-height: 86vh;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: default;
+  transform: scale(0.98);
+  transition: transform 0.2s ease;
+}
+
+.g-lightbox.is-open .g-lightbox-img {
+  transform: scale(1);
+}
+
+.g-lightbox-close,
+.g-lightbox-nav {
+  position: absolute;
+  z-index: 1;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+.g-lightbox-close:hover,
+.g-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.g-lightbox-close {
+  top: 1rem;
+  right: 1rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.6rem;
+}
+
+.g-lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3rem;
+  height: 3rem;
+  font-size: 2rem;
+}
+
+.g-prev {
+  left: 1rem;
+}
+
+.g-next {
+  right: 1rem;
+}
+
+.g-lightbox-caption {
+  position: absolute;
+  inset: auto 0 1.25rem 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  padding: 0 1rem;
+}
+
+/* Accesibilidad: respetar a quien pidió menos animación. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

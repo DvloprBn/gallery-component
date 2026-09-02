@@ -148,6 +148,53 @@ verificar que quien pide tiene acceso, genera una URL de **vida corta**:
 En ambos casos el `storage_key` es un UUID aleatorio: no se deriva del nombre del archivo, del
 usuario ni de nada secuencial.
 
+### E11. Imágenes responsivas sin librería: `srcset` + `sizes` + BlurHash
+
+**Archivos**: `gallery_frontend/src/components/GalleryImage.tsx`, `BlurhashCanvas.tsx`.
+
+El backend ya generó 4 tamaños (`thumb` 240 / `small` 640 / `medium` 1280 / `large` 2048) en
+WebP. El frontend los ofrece todos al navegador en un `<img srcset>` con un atributo `sizes` que
+describe qué ancho ocupará la imagen en cada breakpoint. El navegador elige el archivo más
+pequeño que sirva para la pantalla y la densidad de píxeles de quien mira — sin JavaScript.
+
+Mientras la imagen carga se ve el **BlurHash**: una cadena de ~30 caracteres que codifica una
+versión difuminada de 4×4 "bloques de color". `BlurhashCanvas` la decodifica a un `<canvas>` de
+32×32 px (instantáneo) y lo pinta detrás; cuando el `<img>` real dispara su `onLoad`, se
+desvanece por encima. Así nunca hay un hueco en blanco ni un salto de layout (el `<img>` lleva
+`width`/`height` reales, que reservan el espacio con `aspect-ratio`).
+
+### E12. `NODE_ENV` y por qué `next build` fallaba
+
+**Archivos**: `docker-compose.yml`, `DOCUMENTO_VIVO_ARQUITECTURA.md` §5.2.
+
+Next tiene dos modos: `next dev` (servidor de desarrollo, recarga en caliente) y
+`next build` + `next start` (producción). El contenedor de desarrollo fija
+`NODE_ENV=development` porque es lo correcto para `next dev`. Pero `next build` **espera
+`NODE_ENV=production`**: si se corre con `development`, carga la build de desarrollo de React y el
+prerender de una página interna (`/_global-error`) truena con un error críptico
+(`Cannot read properties of null (reading 'useContext')`) que parece un bug del código propio y
+no lo es. La lección general: `NODE_ENV` no es una variable cualquiera — muchas herramientas del
+ecosistema (React, Next, Express) cambian de comportamiento según su valor, y "development" no es
+un sinónimo inofensivo de "no producción".
+
+### E13. Animar sin una librería de animación
+
+**Archivos**: `gallery_frontend/src/components/GalleryLayout.tsx`, `Lightbox.tsx`,
+`src/app/globals.css`.
+
+Se probó `motion` (antes `framer-motion`) y se quitó. La animación de entrada —cada imagen
+aparece con un *fade-up* escalonado cuando entra en pantalla al hacer scroll— se hace con:
+1. Un `IntersectionObserver` (API nativa del navegador) que añade la clase `.is-in` a cada
+   elemento cuando entra en el viewport, una sola vez.
+2. CSS: el elemento empieza en `opacity: 0; transform: translateY(24px)` y `.is-in` lo lleva a su
+   posición final con una `transition`. El retardo escalonado va en una custom property
+   (`--reveal-delay`) calculada por posición.
+3. `@media (prefers-reduced-motion: reduce)` anula todo: los elementos aparecen ya visibles.
+
+Para una galería con decenas de imágenes esto pesa **0 KB de JavaScript de animación** y el
+navegador compone las transiciones en su hilo propio. El lightbox usa el mismo principio (una
+clase `.is-open` y transiciones CSS).
+
 ---
 
 ## Mapa de conceptos pendientes

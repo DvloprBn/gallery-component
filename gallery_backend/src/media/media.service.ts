@@ -45,6 +45,48 @@ export class MediaService {
   ) {}
 
   /**
+   * Lista los álbumes `public` más recientes, para el índice del sitio.
+   *
+   * @param limit - Máximo de álbumes (1–48).
+   * @returns Cada álbum con su slug, título, conteo y la URL de la miniatura
+   *          de portada (si tiene).
+   */
+  async listPublic(limit = 24) {
+    const take = Math.min(Math.max(limit, 1), 48);
+    const albums = await this.prisma.albums.findMany({
+      where: { visibility: 'public', image_count: { gt: 0 } },
+      orderBy: { created_at: 'desc' },
+      take,
+    });
+
+    return Promise.all(
+      albums.map(async (album) => {
+        let coverUrl: string | null = null;
+        const cover = album.cover_image_id
+          ? await this.prisma.images.findUnique({
+              where: { image_id: album.cover_image_id },
+              include: { variants: true },
+            })
+          : null;
+        if (cover) {
+          const small = cover.variants.find((v) => v.label === 'small');
+          coverUrl = this.storage.urlFor(
+            (small ?? cover).storage_key,
+            'public',
+          );
+        }
+        return {
+          slug: album.slug,
+          title: album.title,
+          description: album.description,
+          imageCount: album.image_count,
+          coverUrl,
+        };
+      }),
+    );
+  }
+
+  /**
    * Devuelve la galería de un álbum por su slug, aplicando el control de
    * acceso por visibilidad.
    *

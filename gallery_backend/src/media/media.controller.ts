@@ -15,6 +15,13 @@ export class MediaController {
   constructor(private readonly media: MediaService) {}
 
   @Public()
+  @Get('galleries')
+  @ApiOperation({ summary: 'Índice de galerías públicas (recientes)' })
+  listPublic() {
+    return this.media.listPublic();
+  }
+
+  @Public()
   @Get('g/:slug')
   @ApiOperation({ summary: 'Galería pública de un álbum (por slug)' })
   getGallery(

@@ -46,6 +46,15 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // En producción la API vive bajo `/api/*` del mismo host que el frontend
+  // (`galeria.dvloprbn.dev`) — un solo origen, sin CORS. En desarrollo el
+  // prefijo va vacío. `GLOBAL_PREFIX` debe coincidir con la ruta que el
+  // reverse proxy enruta al backend, y con la parte de ruta de `BACKEND_URL`.
+  const globalPrefix = process.env.GLOBAL_PREFIX?.trim();
+  if (globalPrefix) {
+    app.setGlobalPrefix(globalPrefix);
+  }
+
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('Galería — API')
