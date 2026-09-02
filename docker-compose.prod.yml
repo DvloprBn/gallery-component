@@ -57,6 +57,17 @@ services:
         condition: service_healthy
       gallery_redis:
         condition: service_healthy
+    healthcheck:
+      # La imagen slim no trae curl; Node 22 sí trae fetch global.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3040/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 45s
     networks: [internal]
 
   gallery_frontend:
@@ -71,7 +82,8 @@ services:
       PORT: 3041
       HOSTNAME: 0.0.0.0
     depends_on:
-      - gallery_backend
+      gallery_backend:
+        condition: service_healthy
     networks: [internal]
 
   caddy:
@@ -87,8 +99,10 @@ services:
       - gallery_prod_caddy_data:/data
       - gallery_prod_caddy_config:/config
     depends_on:
-      - gallery_frontend
-      - gallery_backend
+      gallery_backend:
+        condition: service_healthy
+      gallery_frontend:
+        condition: service_started
     networks: [internal]
 
 networks:

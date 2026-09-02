@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend — typecheck, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gallery_backend
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: gallery_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: gallery_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U gallery_user -d gallery_db"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://gallery_user:ci_password@localhost:5432/gallery_db?schema=public
+      REDIS_URL: redis://localhost:6379
+      # Solo para los tests; no son secretos reales.
+      TOTP_ENCRYPTION_KEY: '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+      MEDIA_URL_SIGNING_SECRET: ci-media-signing-secret
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gallery_backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - name: Typecheck (config base — src, prisma, scripts, specs)
+        run: npx tsc -p tsconfig.json --noEmit
+      - name: Tests (unitarios + integración contra Postgres)
+        run: npm test
+      - name: Build (nest build)
+        run: npm run build
+
+  frontend:
+    name: Frontend — build de producción
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gallery_frontend
+
+    env:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: /api
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gallery_frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

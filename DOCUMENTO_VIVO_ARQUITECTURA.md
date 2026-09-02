@@ -919,3 +919,63 @@ Se resuelve borrando `dist/` + `*.tsbuildinfo` dentro del contenedor y reinician
 correr `tsc -p tsconfig.build.json` desde el host contra el directorio del backend — los
 typechecks manuales van con `tsc -p tsconfig.json` (config base). `*.tsbuildinfo` está en
 `.gitignore` y `.dockerignore`.
+
+---
+
+## 10. Endurecimiento de producción (2026-09-01)
+
+Cuatro piezas de hardening que faltaban (el dominio/VPS los gestiona el proyecto del portafolio).
+
+### 10.1 Rate limit global de la API (`@nestjs/throttler`)
+
+`ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }])` + `ThrottlerGuard` como **primer**
+`APP_GUARD` (antes de `JwtAuthGuard`/`RolesGuard` — corta un flood antes de gastar trabajo). Es el
+límite general **por debajo del cual** viven los límites finos de fuerza bruta
+(`SecurityEventsService`: login 10/15 min, 2FA 5/15 min) y de subida (120/hora).
+
+- `@SkipThrottle()` en `HealthController` — el monitoreo lo consulta seguido; no debe bloquearse.
+- `@Throttle({ default: { limit: 2400, ttl: 60_000 } })` en `MediaController` — una página de
+  galería pide muchas imágenes/variantes a la vez; en producción esto lo sirve el CDN, no el backend.
+- Almacenamiento en memoria (una sola instancia). Si algún día hay varias, toca un storage
+  compartido (Redis) para el throttler.
+
+**Verificado**: 650 peticiones en paralelo a `/auth/me` → 600 × 401 + **50 × 429**; `/health`
+respondió 200 durante todo el flood; `/galleries` devuelve `X-RateLimit-Limit: 2400`.
+
+### 10.2 Healthcheck del backend en producción
+
+`docker-compose.prod.yml` → `gallery_backend` gana un `healthcheck` (`node -e "fetch('http://127.0.0.1:3040/api/health')…"`
+— la imagen slim no trae `curl`, Node 22 sí trae `fetch`), y `gallery_frontend` y `caddy` pasan a
+`depends_on: { gallery_backend: { condition: service_healthy } }`. Un arranque en frío ya no expone
+el sitio antes de que la API responda.
+
+### 10.3 CI — `.github/workflows/ci.yml`
+
+Dos jobs en cada push a `main` y en cada PR:
+- **backend**: servicios `postgres:18` + `redis:8`; `npm ci` → `prisma generate` →
+  `prisma migrate deploy` → `tsc -p tsconfig.json --noEmit` → `npm test` (36 tests, incluidos los
+  de integración contra Postgres) → `nest build`.
+- **frontend**: `npm ci` → `next build` con `NODE_ENV=production`.
+
+Para que el typecheck local sea idéntico al de CI, `tsconfig.json` (config base) ganó
+`include`/`exclude` explícitos — el `exclude` de `documentation/` evita que tsc intente compilar la
+salida de Compodoc (trae archivos de ejemplo de Angular).
+
+### 10.4 Cabeceras de seguridad del frontend (`next.config.ts` → `headers()`)
+
+`helmet()` solo cubre las respuestas de la API. Ahora el Next añade a **todas** sus respuestas:
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`
+(camera/mic/geo denegados), `Strict-Transport-Security` (solo en producción), y una **CSP** que se
+compone según el entorno: `default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`,
+`img-src` con `data:`/`blob:`/`res.cloudinary.com`/(origen de la API en dev), `style-src`/`script-src`
+con `'unsafe-inline'` (Next inyecta CSS/JS críticos; no se montó flujo de nonces), y en desarrollo
+`'unsafe-eval'` + `ws:` para el hot-reload. Verificado que la galería sigue cargando las imágenes
+bajo la CSP.
+
+### 10.5 Hallazgo: `incremental: true` + `deleteOutDir: true`
+
+`nest-cli.json` tiene `deleteOutDir: true` y `tsconfig.json` tenía `incremental: true`. Combinados,
+tras un `restart`/`--force-recreate` del contenedor de desarrollo: Nest borra `dist/`, tsc corre en
+modo incremental, ve por el `.tsbuildinfo` que "todo está compilado" y **no re-emite nada** →
+`Cannot find module '/app/dist/main'` en bucle. Se quitó `incremental` (el proyecto es pequeño, el
+build completo es rápido). `*.tsbuildinfo` sigue en `.gitignore` y `.dockerignore`.

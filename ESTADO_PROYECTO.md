@@ -9,7 +9,24 @@
 
 ## 1. Dónde estamos
 
-**Todas las fases + pulido posterior completos (2026-09-01).** Lo último:
+**Todas las fases + pulido + endurecimiento de producción completos (2026-09-01).**
+
+Último bloque (hardening — el dominio/VPS los gestiona el proyecto del portafolio):
+
+- **Rate limit global** (`@nestjs/throttler`): 600/min por IP (2400/min para media, `/health`
+  exento); los límites de fuerza bruta viven por debajo. Verificado: 650 req → 600×401 + 50×429.
+- **Healthcheck del backend** en `docker-compose.prod.yml` + `condition: service_healthy` en
+  frontend y Caddy.
+- **CI** (`.github/workflows/ci.yml`): backend (Postgres+Redis, `tsc` + 36 tests + `nest build`) y
+  frontend (`next build` prod).
+- **Cabeceras de seguridad del frontend** (`next.config.ts`): CSP env-aware, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, HSTS en prod.
+- **Fix**: `incremental: true` quitado de `tsconfig.json` (rompía `nest start --watch` tras
+  `restart` por chocar con `deleteOutDir`); `tsconfig.json` gana `include`/`exclude` (excluye la
+  salida de Compodoc para que el `tsc` local == CI).
+- Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §10.
+
+Lo anterior:
 
 - **Pruebas: de 11 a 36** (8 suites). Nuevas: `slug.util`, `media-signing`, `image-pipeline`
   (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), y **dos suites de

@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { MediaService } from './media.service';
@@ -11,6 +12,10 @@ import { MediaService } from './media.service';
  */
 @ApiTags('media')
 @Controller()
+// Entrega pública de solo lectura: una página de galería pide muchas imágenes
+// a la vez, así que el tope es mucho más alto que el global (que sigue
+// protegiendo del abuso masivo). En producción esto lo sirve el CDN, no el backend.
+@Throttle({ default: { limit: 2400, ttl: 60_000 } })
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 

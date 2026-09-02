@@ -10,7 +10,6 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "incremental": true,
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": true,
@@ -23,5 +22,7 @@
     "paths": {
       "@/*": ["src/*"]
     }
-  }
+  },
+  "include": ["src/**/*", "prisma/**/*", "scripts/**/*", "test/**/*", "*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "documentation"]
 }
