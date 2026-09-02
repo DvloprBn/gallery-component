@@ -4,9 +4,10 @@ Galería de imágenes con personalización y animaciones de grado profesional. *
 vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
 atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado: Fases 1–5 completadas y verificadas** (infraestructura · identidad · media core ·
-> galería pública · Studio y paneles). Falta el despliegue y la documentación autogenerada.
-> Vivirá en `galeria.dvloprbn.dev`. Ver `ESTADO_PROYECTO.md`.
+> **Estado: Fases 1–5 + 9 completadas** (infraestructura · identidad · media core · galería
+> pública · Studio y paneles · **artefactos de despliegue**). Falta la documentación autogenerada
+> (Fase 8) y el despliegue real (VPS + DNS). Vivirá en `galeria.dvloprbn.dev`.
+> Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
 
@@ -99,4 +100,16 @@ subir imágenes, editar tema) y **Administración** (usuarios y roles).
 ```bash
 docker compose exec gallery_backend npm test   # 11 tests jest (utilidades puras)
 ```
+
+## Producción (galeria.dvloprbn.dev)
+
+```bash
+cp .env.prod.example .env.prod   # rellena secretos + Cloudinary/Resend; SITE_DOMAIN=galeria.dvloprbn.dev
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+- Un solo origen tras Caddy: frontend en `/`, API en `/api/*`. TLS automático con un dominio real.
+- Postgres y Redis no publican puertos — solo Caddy expone 80/443.
+- El backend aplica migraciones y siembra roles/cuentas al arrancar.
+- Para probar el stack de producción en local: `SITE_DOMAIN=http://localhost` en `.env.prod`.
 

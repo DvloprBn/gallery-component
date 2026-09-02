@@ -1,0 +1,32 @@
+# Reverse proxy de producción para la galería.
+#
+#   SITE_DOMAIN       — el dominio (o "http://localhost" para probar en local).
+#   Un solo origen: el frontend en "/" y la API en "/api/*". Así el navegador
+#   nunca hace peticiones cruzadas y las cookies de sesión son host-only.
+#
+# Caddy obtiene y renueva el certificado TLS automáticamente cuando SITE_DOMAIN
+# es un dominio real apuntando a este servidor.
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	# Todo lo que empieza por /api va al backend (que sirve sus rutas bajo
+	# ese prefijo gracias a GLOBAL_PREFIX=api).
+	@api path /api/*
+	handle @api {
+		reverse_proxy gallery_backend:3040
+	}
+
+	# El resto, al frontend de Next.
+	handle {
+		reverse_proxy gallery_frontend:3041
+	}
+
+	header {
+		# Cabeceras de seguridad a nivel de proxy (el backend ya pone las suyas
+		# con helmet en sus rutas).
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

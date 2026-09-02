@@ -15,7 +15,9 @@
     "prisma:studio": "prisma studio --port 5555 --hostname 0.0.0.0",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage --passWithNoTests"
+    "test:cov": "jest --coverage --passWithNoTests",
+    "prod:migrate": "prisma migrate deploy",
+    "prod:seed": "node --experimental-strip-types prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.3",
@@ -38,6 +40,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.23.0",
+    "prisma": "^7.10.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -57,7 +60,6 @@
     "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.5",
     "jest": "^30.5.1",
-    "prisma": "^7.10.0",
     "ts-jest": "^29.4.12",
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",

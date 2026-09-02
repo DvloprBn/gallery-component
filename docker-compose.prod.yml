@@ -1,0 +1,102 @@
+# Stack de PRODUCCIÓN para galeria.dvloprbn.dev.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Diferencias reales contra el compose de desarrollo:
+#   - Imágenes de producción (multi-etapa), no montaje de código.
+#   - Postgres y Redis SIN puertos publicados — solo la red interna.
+#   - El único puerto público es el de Caddy (80/443).
+#   - NODE_ENV=production, GLOBAL_PREFIX=api, STORAGE_DRIVER=cloudinary.
+
+name: gallery-prod
+
+services:
+  gallery_db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - gallery_prod_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+
+  gallery_redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - gallery_prod_redis_data:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+
+  gallery_backend:
+    build:
+      context: ./gallery_backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3040
+      GLOBAL_PREFIX: api
+    depends_on:
+      gallery_db:
+        condition: service_healthy
+      gallery_redis:
+        condition: service_healthy
+    networks: [internal]
+
+  gallery_frontend:
+    build:
+      context: ./gallery_frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3041
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      - gallery_backend
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-galeria.dvloprbn.dev}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - gallery_prod_caddy_data:/data
+      - gallery_prod_caddy_config:/config
+    depends_on:
+      - gallery_frontend
+      - gallery_backend
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  gallery_prod_db_data:
+  gallery_prod_redis_data:
+  gallery_prod_caddy_data:
+  gallery_prod_caddy_config:

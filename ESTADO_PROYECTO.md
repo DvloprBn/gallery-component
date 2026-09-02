@@ -9,6 +9,24 @@
 
 ## 1. Dónde estamos
 
+**Fase 9 (despliegue) — artefactos listos y verificados en local (2026-09-01).**
+
+- `gallery_backend/Dockerfile` (multi-etapa: `npm ci` → `prisma generate` → `nest build` → prune;
+  runtime = node_modules podado + `dist` + prisma, usuario `node`; arranque = `migrate deploy` +
+  seed + `node dist/main.js`). `prisma` movido a `dependencies`.
+- `gallery_frontend/Dockerfile` (multi-etapa, `output: 'standalone'`, ≈68 MB;
+  `NEXT_PUBLIC_API_BASE_URL=/api` como `ARG` de build).
+- `Caddyfile` (`/api/*` → backend, resto → frontend; TLS automático; un solo origen).
+- `docker-compose.prod.yml` (Postgres/Redis sin puertos publicados; solo Caddy expone 80/443;
+  `NODE_ENV=production`, `GLOBAL_PREFIX=api`, `STORAGE_DRIVER=cloudinary`).
+- `.env.prod.example`; `main.ts` activa `trust proxy` en producción.
+- **Verificado en local** (stack prod tras Caddy en `http://localhost`): `/api/health` ok,
+  `/api/galleries` 200, `/` 200 (Next standalone), `/api/api-json` → 404 (Swagger off en prod),
+  login por el mismo origen con cookies httpOnly funcionando. Detalle en
+  `DOCUMENTO_VIVO_ARQUITECTURA.md` §7.
+- **Falta lo que no se puede hacer desde aquí**: el VPS, el DNS de `galeria.dvloprbn.dev`, y
+  `.env.prod` con los secretos reales.
+
 **Fase 5 (Studio + paneles, frontend) — completada y verificada (2026-09-01).**
 
 - Sesión en el cliente: `apiFetch` (cookies httpOnly), `<AuthProvider>` + `useAuth()`,
@@ -107,17 +125,16 @@
 
 ## 4. Próximo paso
 
-Según el orden pedido por el dueño: **Fase 9 — Despliegue**, luego **Fase 8 — Docs autogenerada**.
+**Fase 8 — Docs autogenerada**: portal `docs/` (MkDocs Material + Swagger UI consumiendo
+`/api-json`) + `@nestjs/swagger` decorando controllers/DTOs + Compodoc del backend; 2 contenedores
+nuevos solo en `127.0.0.1`.
 
-- **Fase 9 — Despliegue**: `docker-compose.prod.yml` + Caddy para `galeria.dvloprbn.dev` (frontend
-  en la raíz, API bajo `/api/*` con `GLOBAL_PREFIX=api`, `NODE_ENV=production`,
-  `STORAGE_DRIVER=cloudinary`, Postgres/Redis sin puertos publicados); Dockerfiles de producción
-  multi-etapa (backend `nest build` + `node dist/main.js`; frontend `next build` + `next start`,
-  con `NEXT_PUBLIC_API_BASE_URL=/api` como build arg); `.env.prod.example`.
-- **Fase 8 — Docs autogenerada**: `docs/` (MkDocs Material + Swagger UI del `/api-json`) +
-  `@nestjs/swagger` en el backend + Compodoc; 2 contenedores solo en `127.0.0.1`.
-- En paralelo (opcional): tests de integración de jerarquía/pipeline; probar
-  `STORAGE_DRIVER=cloudinary` contra la cuenta real.
+Cuando el dueño tenga el VPS y el DNS: desplegar con `docker-compose.prod.yml` (crear `.env.prod`
+desde el ejemplo, apuntar `galeria.dvloprbn.dev` al servidor, `docker compose -f
+docker-compose.prod.yml --env-file .env.prod up -d --build`).
+
+En paralelo (opcional): tests de integración de jerarquía/pipeline; probar
+`STORAGE_DRIVER=cloudinary` contra la cuenta real con `seed-demo`.
 
 ---
 
@@ -125,6 +142,7 @@ Según el orden pedido por el dueño: **Fase 9 — Despliegue**, luego **Fase 8 
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-01 | **Fase 9 (despliegue) — artefactos listos y verificados en local.** `gallery_backend/Dockerfile` (build multi-etapa: `npm ci` → `prisma generate` → `nest build` → `npm prune --omit=dev`; runtime `node:22-slim` usuario `node` con node_modules podado + `dist` + `prisma`; arranque = `migrate deploy` + seed roles/cuentas idempotente + `node dist/main.js`; `prisma` movido a `dependencies` para el `migrate deploy` de runtime). `gallery_frontend/Dockerfile` (multi-etapa con `output: 'standalone'`, imagen ≈68 MB; `NEXT_PUBLIC_API_BASE_URL=/api` como `ARG` de build — se hornea en `next build`). `Caddyfile` (un solo site: `/api/*`→backend, resto→frontend; TLS automático). `docker-compose.prod.yml` (Postgres/Redis **sin puertos publicados**; único puerto público = Caddy 80/443; `NODE_ENV=production`, `GLOBAL_PREFIX=api`, `STORAGE_DRIVER=cloudinary`, `env_file: .env.prod`). `.env.prod.example`. `main.ts` activa `trust proxy: 1` en producción (IP real del cliente para la fuerza bruta). **Hallazgos**: `nest build` metía todo en `dist/src/main.js` porque `tsconfig.build.json` incluía `prisma/` y `scripts/` → corregido con `include: ["src/**/*"]` + `rootDir: src` + excludes; el `tsconfig.build.tsbuildinfo` del host se colaba por `COPY . .` y tsc incremental no emitía nada → `*.tsbuildinfo` añadido al `.dockerignore`. **Verificado en local** (`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`, Caddy en `http://localhost`): 5 contenedores, migrate+seed al arrancar, `/api/health` ok, `/api/galleries` 200, `/` 200 (`<title>Galería</title>`, Next standalone), `/api/api-json` → **404** (Swagger off con `NODE_ENV=production`), login por el mismo origen con cookie `HttpOnly` y `/api/auth/me` devolviendo el usuario. Falta lo que no se puede hacer desde aquí: VPS, DNS de `galeria.dvloprbn.dev`, `.env.prod` real. |
 | 2026-09-01 | **Fase 5 (Studio + paneles, frontend) completada y verificada.** Infra de sesión en cliente: `apiFetch` (cookies httpOnly, `credentials: include`, `ApiError` con el mensaje de la API), `<AuthProvider>`/`useAuth()` (pide `/auth/me` al montar), `<RequireAuth roles>`, `SiteNav`. Rutas: `/login` (3 pasos en pantallas separadas + `<Suspense>` por `useSearchParams`), `/registro` (auto-login), `/cuenta` (cambio de contraseña + **activación de 2FA con QR real** + 10 códigos de recuperación mostrados una vez + desactivar con contraseña), `/studio` (lista de álbumes + crear con **todos los ajustes de una vez**: visibilidad, layout, tokens del tema), `/studio/[albumId]` (subir varios archivos con estado por archivo, rejilla editable — alt/pie inline, portada, borrar, **reordenar arrastrando** → `POST /images/reorder` —, ajustes del álbum, enlaces de compartir crear/listar/revocar, borrar álbum), `/admin` + `/admin/usuarios` (listar, alta con contraseña temporal, cambiar rol/estado) + `/admin/roles` (listar, crear, borrar) bajo `RequireAuth roles=['admin','director','super']`. **Backend menor**: `AuthenticatedUser` + `/auth/me` ganan `totpEnabled` (leído en vivo en `JwtStrategy`); `GET /albums/:id/share-tokens` nuevo (lista sin el token en claro). **Hallazgo**: `useSearchParams()` exige `<Suspense>` alrededor o `next build` falla al prerenderizar con una recursión engañosa en el runtime de Next. **Verificado con `curl`** (forma exacta de la UI): login 3 pasos + `totpEnabled`, crear álbum con `theme` anidado (persistido), subir imagen + `PATCH coverImageId` + `GET .../images` + `reorder`, share-tokens crear/listar/revocar; las 7 páginas nuevas → 200 SSR; `NODE_ENV=production next build` pasa (11 rutas); `tsc` backend limpio; 11 tests jest. |
 | 2026-09-01 | **D8 resuelto + Fase 4 (galería pública, frontend) completada y verificada.** D8: demo **autónoma con su propio ambiente** en **`galeria.dvloprbn.dev`** (subdominio del portafolio); un solo origen (API bajo `/api/*` vía reverse proxy → sin CORS en prod, cookies host-only); solo se comparten Cloudinary + Resend + el dominio raíz. `GLOBAL_PREFIX` (env, vacío en dev) sirve la API bajo `/api` en prod; bloque de producción de referencia añadido a `.env.example`. **Fase 4**: Next.js — `/g/[slug]` (Server Component, valida con Zod, `notFound()` sin acceso, `noindex` si no es público), índice `/` (`GET /galleries`, endpoint nuevo), `not-found`/`global-error` propias. 4 layouts en **CSS puro** (masonry/grid/justified/carousel); animación de entrada por `IntersectionObserver` + transición CSS escalonada; lightbox con teclado/Escape y transiciones CSS — **sin librería de animación** (`motion` se probó y se quitó: menos bundle, mejor rendimiento). `<img srcset>` de los 4 derivados + `sizes` por layout + `loading=lazy` + BlurHash en `<canvas>` detrás. Tema del álbum → CSS custom properties validadas con Zod. `scripts/seed-demo.ts` siembra una galería de demo por el flujo real (8 imágenes). **Hallazgo clave**: `next build` DEBE correr con `NODE_ENV=production` — el compose de dev fija `development` (correcto para `next dev`) y eso rompe el prerender de `/_global-error` con un `useContext` null engañoso; con `production` el build pasa. `fonts-dejavu-core` añadido al Dockerfile del backend (rasterizado de texto en el seed). **Verificado**: `seed-demo` → álbum público con 8 imágenes; `/` y `/g/<slug>` → 200 con el HTML SSR correcto (layout, `g-figure`×8, `g-reveal` escalonado, `srcSet`×4); `/g/no-existe` → 404; `NODE_ENV=production next build` pasa (`/` y `/g/[slug]` dinámicas); `tsc` backend limpio. |
 | 2026-09-01 | **Fase 3 (media core) completada y verificada.** `storage` (abstracción + driver disco con firma HMAC + driver Cloudinary con `authenticated`/URL firmada); `media-processing` (pipeline `sharp`: valida por contenido — **se descartó `file-type`, es redundante y ESM-only** —, re-codifica quitando EXIF/GPS, 4 derivados WebP `thumb`/`small`/`medium`/`large`, BlurHash, `limitInputPixels` contra decompression bombs); `albums` (CRUD con visibilidad/layout/tema al crear, enlaces de compartir `album_share_tokens` con caducidad, `canManage` dueño-o-admin, 404 sin acceso, `theme` limitado a 4 KB); `images` (subida con rate limit 120/h + pipeline + transacción con compensación de objetos huérfanos, listado Studio, edición de metadatos, reordenado validado, borrado con limpieza); `media` (`GET /g/:slug` galería pública con control por visibilidad y token de compartir; `GET /media/:key` servido del driver de disco con firma HMAC para privados, `X-Content-Type-Options: nosniff`, cache según visibilidad). **Verificado con `curl` + `sharp`**: texto renombrado `.jpg` → 400, SVG con `<script>` → 400, JPEG con EXIF+GPS subido → **EXIF eliminado del original servido**, PNG 81 MP → 400 (`limitInputPixels`), archivo de 20 MB → 413 (interceptor), IDOR (otro usuario → 404/404/403), URL de privado firmada + `/media/:key` sin firma o manipulada → 404, galería privada sin token → 404 / con enlace de compartir → 200, cambio a `public` → thumb sin firma servido `image/webp`, limpieza total (BD 6/6/0/0/0, **0 archivos** en el volumen). **Hallazgo**: `theme` debe castearse a `Prisma.InputJsonValue`. `tsc` limpio, 11 tests jest verdes. |

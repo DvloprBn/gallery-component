@@ -25,6 +25,13 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('bootstrap');
 
+  // Detrás del reverse proxy (Caddy) en producción: confía en la primera
+  // cabecera X-Forwarded-* para que `req.ip` sea la IP real del cliente
+  // (la usa la detección de fuerza bruta) y `req.protocol` sea `https`.
+  if (process.env.NODE_ENV === 'production') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
+
   app.use(helmet());
   app.use(cookieParser());
 

@@ -760,3 +760,57 @@ de portada.
 - Las 7 páginas nuevas (`/login`, `/registro`, `/studio`, `/cuenta`, `/admin`, `/admin/roles`,
   `/admin/usuarios`) → 200 SSR.
 - `NODE_ENV=production next build` → **pasa** (11 rutas), `tsc` backend limpio, 11 tests jest verdes.
+
+---
+
+## 7. Fase 9 — Despliegue (artefactos listos y verificados en local, 2026-09-01)
+
+### 7.1 Qué se creó
+
+- **`gallery_backend/Dockerfile`** — build multi-etapa. Etapa 1: `npm ci`, `prisma generate`,
+  `nest build`, `npm prune --omit=dev`. Etapa 2 (runtime, `node:22-bookworm-slim`, usuario `node`):
+  solo `node_modules` podado + `dist` + `prisma` + `prisma.config.ts`. Arranque:
+  `prisma migrate deploy` + seed de roles/cuentas (idempotente) + `node dist/main.js`.
+  `prisma` se movió a `dependencies` (se necesita en runtime para `migrate deploy`).
+- **`gallery_frontend/Dockerfile`** — multi-etapa con `output: 'standalone'` de Next: la imagen
+  final es `.next/standalone` + `.next/static` + `public` (≈68 MB). `NEXT_PUBLIC_API_BASE_URL=/api`
+  entra como **`ARG` de build** (se hornea en `next build`, no en el arranque).
+- **`Caddyfile`** — un solo `site` (`{$SITE_DOMAIN}`): `/api/*` → `gallery_backend:3040`, el resto →
+  `gallery_frontend:3041`. TLS automático con un dominio real. Un solo origen ⇒ sin CORS,
+  cookies host-only.
+- **`docker-compose.prod.yml`** — `gallery_db` + `gallery_redis` **sin puertos publicados** (solo
+  red interna), `gallery_backend` (`NODE_ENV=production`, `GLOBAL_PREFIX=api`,
+  `STORAGE_DRIVER=cloudinary`, `env_file: .env.prod`), `gallery_frontend`, y `caddy` (único
+  servicio con puertos: 80/443).
+- **`.env.prod.example`** — plantilla de producción (secretos propios, Cloudinary+Resend de la
+  cuenta del portafolio, URLs `https://galeria.dvloprbn.dev`).
+- **`main.ts`** — en producción activa `trust proxy: 1` para que `req.ip` (fuerza bruta) sea la IP
+  real del cliente detrás de Caddy, no la del proxy.
+
+### 7.2 Hallazgos
+
+- **`nest build` metía todo en `dist/src/main.js`** (no `dist/main.js`) porque `tsconfig.build.json`
+  incluía `prisma/` y `scripts/` además de `src/` → tsc infería `rootDir` = `/app`. Corregido con
+  `"include": ["src/**/*"]` + `"rootDir": "src"` + excluir `prisma`, `prisma.config.ts`, `scripts`.
+  Los typechecks manuales pasan a usar el `tsconfig.json` base (chequea todo).
+- **`tsconfig.build.tsbuildinfo` del host se colaba en la imagen** (`COPY . .`) y hacía que tsc
+  incremental creyera "todo al día" y **no emitiera nada** — `dist/` quedaba vacío. Corregido
+  añadiendo `*.tsbuildinfo` (y `Dockerfile*`) al `.dockerignore` del backend.
+- Cookie `secure` (que se activa con `NODE_ENV=production`) no se guarda sobre HTTP plano — para
+  probar el stack de producción en local hay que usar `SITE_DOMAIN=http://localhost` y un cliente
+  como `curl`; en el dominio real (HTTPS) es correcto.
+
+### 7.3 Verificación real (stack de producción levantado en local, tras Caddy en `http://localhost`)
+
+`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build` — 5 contenedores;
+Postgres/Redis sin puertos al host; solo Caddy expone 80/443.
+
+- `migrate deploy` + seed de 6 roles / 6 cuentas corren al arrancar el backend.
+- `GET /api/health` → `{"status":"ok","checks":{"database":true,"redis":true}}`.
+- `GET /api/galleries` → 200. `GET /` → 200 con `<title>Galería</title>` (Next standalone).
+  `GET /login` → 200.
+- `GET /api/api-json` → **404** (Swagger correctamente desactivado con `NODE_ENV=production`).
+- **Login por el mismo origen**: `POST /api/auth/login/step2` fija las cookies (`HttpOnly`
+  visible); `GET /api/auth/me` con esas cookies devuelve el usuario — el flujo de sesión funciona
+  a través del reverse proxy sin CORS.
+- Imagen del frontend ≈ 68 MB (salida standalone).

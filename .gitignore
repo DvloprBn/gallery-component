@@ -18,6 +18,7 @@
 .env
 .env.local
 .env.*.local
+.env.prod
 
 # Almacenamiento local de media (driver disco en desarrollo)
 gallery_backend/storage/
