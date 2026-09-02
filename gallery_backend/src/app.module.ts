@@ -18,6 +18,8 @@ import { MediaProcessingModule } from './media-processing/media-processing.modul
 import { AlbumsModule } from './albums/albums.module';
 import { ImagesModule } from './images/images.module';
 import { MediaModule } from './media/media.module';
+import { SiteModule } from './site/site.module';
+import { ContactModule } from './contact/contact.module';
 import { HealthController } from './health/health.controller';
 
 /**
@@ -52,6 +54,8 @@ import { HealthController } from './health/health.controller';
     AlbumsModule,
     ImagesModule,
     MediaModule,
+    SiteModule,
+    ContactModule,
   ],
   controllers: [HealthController],
   providers: [

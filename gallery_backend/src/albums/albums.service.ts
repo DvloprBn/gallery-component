@@ -70,6 +70,7 @@ export class AlbumsService {
         description: dto.description?.trim() ?? null,
         visibility: dto.visibility ?? 'private',
         layout: dto.layout ?? 'masonry',
+        featured: dto.featured ?? false,
         theme: (dto.theme ?? {}) as Prisma.InputJsonValue,
       },
     });
@@ -108,6 +109,7 @@ export class AlbumsService {
         ...(dto.coverImageId !== undefined
           ? { cover_image_id: dto.coverImageId }
           : {}),
+        ...(dto.featured !== undefined ? { featured: dto.featured } : {}),
       },
     });
   }

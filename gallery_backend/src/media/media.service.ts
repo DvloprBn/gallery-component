@@ -45,17 +45,23 @@ export class MediaService {
   ) {}
 
   /**
-   * Lista los álbumes `public` más recientes, para el índice del sitio.
+   * Lista las colecciones `public` (con imágenes), ordenadas por `sort_order`
+   * y luego por fecha — para el índice del sitio y la portada.
    *
-   * @param limit - Máximo de álbumes (1–48).
-   * @returns Cada álbum con su slug, título, conteo y la URL de la miniatura
-   *          de portada (si tiene).
+   * @param opts.limit - Máximo de colecciones (1–48).
+   * @param opts.featuredOnly - Solo las marcadas para la portada.
+   * @returns Cada colección con su slug, título, conteo y la URL de la
+   *          miniatura de portada (si tiene).
    */
-  async listPublic(limit = 24) {
-    const take = Math.min(Math.max(limit, 1), 48);
+  async listPublic(opts: { limit?: number; featuredOnly?: boolean } = {}) {
+    const take = Math.min(Math.max(opts.limit ?? 24, 1), 48);
     const albums = await this.prisma.albums.findMany({
-      where: { visibility: 'public', image_count: { gt: 0 } },
-      orderBy: { created_at: 'desc' },
+      where: {
+        visibility: 'public',
+        image_count: { gt: 0 },
+        ...(opts.featuredOnly ? { featured: true } : {}),
+      },
+      orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
       take,
     });
 

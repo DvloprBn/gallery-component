@@ -21,9 +21,9 @@ export class MediaController {
 
   @Public()
   @Get('galleries')
-  @ApiOperation({ summary: 'Índice de galerías públicas (recientes)' })
-  listPublic() {
-    return this.media.listPublic();
+  @ApiOperation({ summary: 'Índice de colecciones públicas (todas, o solo las destacadas)' })
+  listPublic(@Query('featured') featured?: string) {
+    return this.media.listPublic({ featuredOnly: featured === 'true' });
   }
 
   @Public()

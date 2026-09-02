@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -37,6 +38,11 @@ export class CreateAlbumDto {
   @IsOptional()
   @IsObject()
   theme?: Record<string, unknown>;
+
+  /** Se muestra en la portada del sitio. */
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 }
 
 /** `PATCH /albums/:id`. */
@@ -66,6 +72,10 @@ export class UpdateAlbumDto {
   @IsOptional()
   @IsUUID()
   coverImageId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 }
 
 /** `POST /albums/:id/share-tokens`. */

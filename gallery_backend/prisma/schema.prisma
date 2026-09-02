@@ -140,6 +140,7 @@ model albums {
   theme          Json     @default("{}") // tokens de diseño (colores, tipografía, radios, espaciado, motion)
   cover_image_id String?  @db.Uuid
   sort_order     Int      @default(0)
+  featured       Boolean  @default(false) // se muestra en la portada del sitio
   image_count    Int      @default(0) // desnormalizado, mantenido dentro de la misma transacción
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -214,4 +215,36 @@ model album_share_tokens {
   album albums @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
 
   @@index([album_id])
+}
+
+// ─────────────────────────── SITIO (PORTAFOLIO) ───────────────────────────
+
+// Fila única (id = 1) con los textos e imagen que dan al sitio su identidad
+// de portafolio: nombre del/la fotógrafo/a, declaración, "sobre mí", contacto.
+model site_settings {
+  id             Int      @id @default(1)
+  site_title     String   @default("Portafolio") @db.VarChar(120)
+  owner_name     String   @default("") @db.VarChar(120)
+  tagline        String   @default("") @db.VarChar(200)
+  bio            String   @default("") @db.VarChar(600) // frase(s) para la portada
+  about_body     String   @default("") // texto largo de la página "Sobre mí"
+  contact_email  String   @default("") @db.VarChar(255)
+  contact_intro  String   @default("") @db.VarChar(600)
+  instagram      String   @default("") @db.VarChar(200)
+  hero_image_id  String?  @db.Uuid // imagen a sangre completa de la portada
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Mensajes del formulario de contacto público. Se guardan para poder
+// revisarlos en el panel además de intentar el envío por correo.
+model contact_messages {
+  message_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @db.VarChar(150)
+  email      String   @db.VarChar(255)
+  body       String   @db.VarChar(4000)
+  ip_address String?  @db.VarChar(45)
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([is_read, created_at])
 }
