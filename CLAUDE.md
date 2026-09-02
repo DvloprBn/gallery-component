@@ -14,13 +14,25 @@ Una **galería de imágenes** con dos ejes que la definen:
    fluida (zoom, lightbox, arrastre para reordenar), con un **presupuesto de rendimiento real**
    (Core Web Vitals) y respeto a `prefers-reduced-motion`.
 
-**No hay un negocio real detrás.** Es un proyecto de estudio, con dos objetivos reales:
+**No es un producto ni un negocio.** Es una **demo de vitrina** que vivirá **dentro del portafolio
+DvloprBn** (`projects/dvlopr-bn`), en el mismo dominio: una demostración "súper completa" de lo que
+el dueño puede construir, para que un cliente potencial la vea y contrate más trabajo. No es un
+sistema que se despliega solo; su lugar final es como pieza del portafolio.
 
-1. Que el dueño pueda **leer y entender todo el código** sin ayuda externa.
-2. Servir como **módulo reutilizable** en un proyecto real futuro (nombres genéricos, sin marca).
+Objetivos reales:
 
-Aun sin negocio real, el resultado debe ser **cien por ciento funcional** y pasar pruebas de
-seguridad exhaustivas — **la seguridad es prioridad #1 salga o no a producción**.
+1. **Impresionar con calidad real** — un cliente que la abra debe ver ingeniería de producción
+   (seguridad, rendimiento, pulido), no un maqueta. Por eso: **cien por ciento funcional**, sin
+   atajos simulados, y **la seguridad es prioridad #1 salga o no "a producción"**.
+2. Que el dueño pueda **leer y entender todo el código** sin ayuda externa.
+3. Estar construida para **integrarse al portafolio** — nombres genéricos, `.env` documentado,
+   `docker-compose` autocontenible. Se desarrolla aquí de forma autónoma (mismo patrón con el que
+   se hizo OmniUser) y se enlaza/integra desde el portafolio.
+
+> **Abierto — resolver antes del despliegue** (`PLAN_DESARROLLO.md` §4, D8): el *modelo* de
+> integración con el portafolio (subdominio propio enlazado, o módulo dentro del código del
+> portafolio reusando su auth). No bloquea las fases de backend; sí condiciona la Fase 4 (frontend)
+> y el despliegue.
 
 ---
 

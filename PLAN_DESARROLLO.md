@@ -10,7 +10,10 @@
 
 ## §0. Propósito y estándar de calidad
 
-Proyecto de estudio, sin negocio real detrás. Dos objetivos reales, ninguno opcional:
+**Demo de vitrina dentro del portafolio DvloprBn** (`projects/dvlopr-bn`), mismo dominio — no es un
+producto ni se despliega solo. Su función es comercial: que un cliente potencial la abra, vea
+ingeniería de producción real y contrate más trabajo. Se desarrolla aquí de forma autónoma (mismo
+patrón que OmniUser) y se integra/enlaza desde el portafolio. Dos objetivos, ninguno opcional:
 
 1. **Legibilidad total.** El dueño tiene que poder leer y entender *todo* el código sin ayuda
    externa, al grado de modificarlo solo. Por eso el estándar de comentarios está en el máximo
@@ -131,6 +134,7 @@ Mismo stack en todas las capas, sin variarlo sin confirmarlo:
 | **D5** | 2FA (TOTP) para cuentas administrativas | ✅ **Incluido** desde la primera versión | Seguridad prioridad #1 salga o no a producción; el admin controla todo el contenido. Patrón probado, costo marginal bajo. |
 | **D6** | Nombre del producto / paquetes | ✅ Paquetes: `gallery_backend` / `gallery_frontend`. Nombre de marca: **pendiente, no bloqueante** | Los nombres físicos ya son genéricos y seguros. El nombre comercial se fija en cualquier momento sin tocar código. |
 | **D7** | ¿El repositorio será público? | ✅ **Sí** (portafolio) — seed con datos dummy y correos `@example.com` | La seguridad del proyecto nunca depende de que el código sea secreto. Nunca se commitea un correo/dato real. |
+| **D8** | Modelo de integración con el portafolio DvloprBn | 🟡 **Abierta** — resolver antes de la Fase 4 (frontend) y del despliegue | Dos opciones: **(a)** demo autónoma en un subdominio propio (`galeria.<dominio>`), enlazada desde el portafolio, con su propio stack y su propia identidad — es lo que se está construyendo; **(b)** módulo dentro del código del portafolio, reusando su auth/admin. La opción (a) mantiene la demo desplegable y demostrable ya; (b) evita duplicar identidad pero acopla los dos proyectos. El backend (Fases 1–3) sirve para ambas; la decisión solo cambia el frontend y el despliegue. |
 
 **Decisiones ya tomadas (no abiertas):**
 - Stack idéntico al de §3 — pedido explícito, no se varía.
