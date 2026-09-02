@@ -904,8 +904,11 @@ Después se revirtió `.env` a `STORAGE_DRIVER=disk` y se re-sembró la demo loc
   se elevan levemente al hover en masonry/grid/justified (anulado con `prefers-reduced-motion`).
 - **Lightbox**: fondo con `backdrop-filter: blur`, contador `n / total`, imagen con sombra y
   zoom-in sutil al abrir, pie de foto enmarcado bajo la imagen, botones tipo "pill" con blur.
-- Studio y administración se dejaron como estaban — son herramientas de operación, ya suficientemente
-  limpias.
+- **Studio y administración** (segunda pasada): las secciones (`.panel-section`) pasan a ser
+  tarjetas con superficie/borde/radio; sistema de tokens CSS (`--surface`, `--border`, `--accent`,
+  `--ease`); nav pegajosa con blur y enlace activo (`aria-current`); inputs con foco anillado,
+  botones con micro-interacción, tablas con hover de fila, listas de álbumes e imágenes como
+  tarjetas, panel admin con enlaces tipo botón. Solo CSS + un ajuste en `SiteNav` (enlace activo).
 
 ### 9.4 Hallazgo de entorno de desarrollo
 
