@@ -59,6 +59,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roleName: user.roles.name,
       roleLevel: user.roles.level,
       mustChangePassword: user.must_change_password,
+      totpEnabled: user.totp_enabled,
     };
   }
 }

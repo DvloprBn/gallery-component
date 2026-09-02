@@ -700,3 +700,63 @@ de portada.
 - `GET http://localhost:3051/g/no-existe` → 404 (página `not-found` propia).
 - `NODE_ENV=production npx next build` → **pasa**: `/` y `/g/[slug]` dinámicas, `/_not-found`
   estática. `tsc` del backend limpio.
+
+---
+
+## 6. Fase 5 — Studio y paneles (frontend) (completada y verificada, 2026-09-01)
+
+### 6.1 Qué se construyó
+
+**Infra de sesión en el cliente**:
+- `lib/api-client.ts` — `apiFetch()` con `credentials: 'include'` (la sesión son cookies httpOnly
+  que el JS no lee; el navegador las adjunta). Serializa JSON o pasa `FormData` tal cual; lanza
+  `ApiError` con el mensaje de la API en respuestas no-2xx.
+- `lib/auth.tsx` — `<AuthProvider>` + `useAuth()` (pide `/auth/me` al montar; `me` `null` sin
+  sesión no es error). `<RequireAuth roles={...}>` redirige a `/login?next=` o a `/` según falte
+  sesión o rol — el backend igual rechaza cada petición, esto solo evita pintar una pantalla
+  inútil.
+- `SiteNav` — barra del sitio; se oculta dentro de `/g/...`; enlaces según sesión/rol.
+
+**Rutas nuevas** (todas Client Components):
+- `/login` — 3 pasos en pantallas separadas (correo → contraseña → 2FA), con `<Suspense>`
+  alrededor del componente que usa `useSearchParams` (`?next=`).
+- `/registro` — alta con auto-login.
+- `/cuenta` — cambio de contraseña + **activación de 2FA** (QR real de `POST /two-factor/setup`,
+  confirmación con código, muestra los 10 códigos de recuperación una vez; desactivar pide contraseña).
+- `/studio` — lista de álbumes propios + crear (formulario **con todos los ajustes de una vez** —
+  visibilidad, layout y los tokens del tema: colores, tipografía, columnas, separación, radio,
+  preset de animación — no "crear y luego ir a editar").
+- `/studio/[albumId]` — subir varios archivos (uno tras otro, estado por archivo), rejilla de
+  imágenes editable (alt/pie inline, hacer portada, borrar, **reordenar arrastrando** con
+  `POST /images/reorder`), ajustes del álbum (mismo formulario), enlaces de compartir
+  (crear/listar/revocar — endpoint `GET /albums/:id/share-tokens` nuevo), y borrar el álbum.
+- `/admin`, `/admin/usuarios` (listar, alta con contraseña temporal, cambiar rol/estado),
+  `/admin/roles` (listar, crear, borrar) — bajo `<RequireAuth roles={['admin','director','super']}>`.
+
+**Cambios de backend menores**:
+- `AuthenticatedUser` + `/auth/me` ganan `totpEnabled` (el frontend necesita saber si mostrar
+  "activar" o "desactivar" 2FA) — leído en vivo en `JwtStrategy.validate`.
+- `GET /albums/:id/share-tokens` — lista los enlaces (sin el token en claro) para poder revocarlos
+  desde el Studio.
+
+### 6.2 Hallazgos
+
+- **`useSearchParams()` exige un `<Suspense>` alrededor** o el `next build` (producción) falla al
+  prerenderizar esa ruta — con un error engañoso (recursión profunda en el runtime de Next, no un
+  mensaje claro). Solución: el `export default` de `/login` solo renderiza
+  `<Suspense><LoginForm/></Suspense>`.
+- Confirmado que el arreglo de `NODE_ENV=production` para `next build` (§5.2) se mantiene con las
+  15+ rutas nuevas: `/_global-error` ya no falla.
+- El `apiFetch` tuvo que tipar `init` como `Omit<RequestInit, 'body'> & { body?: unknown }` — una
+  intersección simple con `RequestInit` deja `body` como `BodyInit`, no `unknown`.
+
+### 6.3 Verificación real (curl con la forma exacta que manda la UI)
+
+- Login en 3 pasos, `/auth/me` devuelve `totpEnabled`.
+- Crear álbum con el `theme` anidado del formulario → aceptado, `theme.motion.preset` persistido.
+- Subir imagen → `imageId` + 5 URLs; `PATCH coverImageId` → 200; `GET /albums/:id/images` → ok;
+  `POST /images/reorder` → 200.
+- Enlaces de compartir: crear → `GET` lista (endpoint nuevo) → `DELETE` revoca (204).
+- Las 7 páginas nuevas (`/login`, `/registro`, `/studio`, `/cuenta`, `/admin`, `/admin/roles`,
+  `/admin/usuarios`) → 200 SSR.
+- `NODE_ENV=production next build` → **pasa** (11 rutas), `tsc` backend limpio, 11 tests jest verdes.

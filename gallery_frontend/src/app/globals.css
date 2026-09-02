@@ -43,6 +43,356 @@ a {
   color: rgba(245, 245, 247, 0.6);
 }
 
+/* ─────────────────── Navegación del sitio + paneles ─────────────────── */
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
+.site-nav a {
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.site-nav a:hover {
+  opacity: 1;
+}
+
+.site-nav__brand {
+  font-weight: 700;
+  opacity: 1 !important;
+}
+
+.site-nav__spacer {
+  flex: 1;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.link-button:hover {
+  opacity: 1;
+}
+
+.link-button.danger,
+button.danger {
+  color: #ff7a7a;
+}
+
+.panel,
+.auth-card {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.auth-card {
+  max-width: 24rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panel-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.panel-section h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.page-note {
+  padding: 2rem 1.5rem;
+  text-align: center;
+  opacity: 0.6;
+}
+
+.danger-zone {
+  border-color: rgba(255, 122, 122, 0.3);
+}
+
+/* Formularios */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 32rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
+input[type='color'] {
+  padding: 2px;
+  height: 2.2rem;
+  width: 100%;
+}
+
+input[type='range'] {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--g-accent, #ff5d3a);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  color: #0b0b0f;
+  background: #f5f5f7;
+  border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #fff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.link-button,
+button.danger.link-button {
+  background: none;
+  font-weight: 400;
+}
+
+button.danger:not(.link-button) {
+  background: #3a1212;
+  color: #ff9a9a;
+}
+
+.hint {
+  font-size: 0.78rem;
+  opacity: 0.6;
+}
+
+.form-error {
+  color: #ff9a9a;
+  font-size: 0.85rem;
+}
+
+.form-ok {
+  color: #9ae6a6;
+  font-size: 0.85rem;
+}
+
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inline-form.wrap {
+  flex-wrap: wrap;
+}
+
+.album-form .field-grid,
+.theme-fieldset .field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.85rem;
+}
+
+.album-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 44rem;
+}
+
+.field-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
+.theme-fieldset {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.theme-fieldset legend {
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* Tablas */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  vertical-align: top;
+}
+
+.data-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.row--muted td {
+  opacity: 0.5;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05em 0.5em;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.badge--public {
+  background: rgba(138, 180, 255, 0.2);
+  color: #bcd3ff;
+}
+.badge--private {
+  background: rgba(255, 122, 122, 0.18);
+  color: #ffb3b3;
+}
+
+/* Listas del Studio */
+.album-list,
+.admin-links,
+.recovery-codes,
+.upload-status {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+
+.album-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.album-list__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-decoration: none;
+  flex: 1;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.4rem;
+}
+
+.recovery-codes code {
+  display: block;
+  text-align: center;
+  padding: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+}
+
+.upload-status li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+}
+
+/* Rejilla editable de imágenes */
+.img-grid {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.img-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  cursor: grab;
+}
+
+.img-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.img-meta {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.img-actions {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
 /* Índice de galerías en la portada */
 .index-list {
   list-style: none;

@@ -27,4 +27,5 @@ export interface AuthenticatedUser {
   roleName: string;
   roleLevel: number;
   mustChangePassword: boolean;
+  totpEnabled: boolean;
 }

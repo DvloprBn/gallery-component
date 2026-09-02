@@ -133,6 +133,30 @@ export class AlbumsService {
     await this.prisma.albums.delete({ where: { album_id: album.album_id } });
   }
 
+  /**
+   * Lista los enlaces de compartir de un álbum (sin el token en claro — solo
+   * su id, cuándo se creó, cuándo caduca y si está revocado).
+   */
+  async listShareTokens(albumId: string, actor: AuthenticatedUser) {
+    const album = await this.getOwned(albumId, actor);
+    const tokens = await this.prisma.album_share_tokens.findMany({
+      where: { album_id: album.album_id },
+      orderBy: { created_at: 'desc' },
+      select: {
+        share_token_id: true,
+        created_at: true,
+        expires_at: true,
+        revoked: true,
+      },
+    });
+    return tokens.map((t) => ({
+      shareTokenId: t.share_token_id,
+      createdAt: t.created_at,
+      expiresAt: t.expires_at,
+      revoked: t.revoked,
+    }));
+  }
+
   /** Crea un enlace de compartir para un álbum `unlisted`/`private`. */
   async createShareToken(
     albumId: string,

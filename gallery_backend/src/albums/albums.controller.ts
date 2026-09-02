@@ -70,6 +70,15 @@ export class AlbumsController {
     return this.albums.remove(id, actor);
   }
 
+  @Get(':id/share-tokens')
+  @ApiOperation({ summary: 'Lista los enlaces de compartir del álbum (sin el token)' })
+  listShareTokens(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.albums.listShareTokens(id, actor);
+  }
+
   @Post(':id/share-tokens')
   @ApiOperation({ summary: 'Crea un enlace de compartir (con caducidad opcional)' })
   createShareToken(

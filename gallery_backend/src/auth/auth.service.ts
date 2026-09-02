@@ -501,6 +501,7 @@ export class AuthService {
     user_id: string;
     email: string;
     must_change_password: boolean;
+    totp_enabled: boolean;
     roles: { name: string; level: number };
   }): AuthenticatedUser {
     return {
@@ -509,6 +510,7 @@ export class AuthService {
       roleName: user.roles.name,
       roleLevel: user.roles.level,
       mustChangePassword: user.must_change_password,
+      totpEnabled: user.totp_enabled,
     };
   }
 }

@@ -4,9 +4,9 @@ Galería de imágenes con personalización y animaciones de grado profesional. *
 vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
 atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado: Fases 1–4 completadas y verificadas** (infraestructura · identidad · media core ·
-> galería pública). Falta el Studio (panel del dueño) y el despliegue. Vivirá en
-> `galeria.dvloprbn.dev`. Ver `ESTADO_PROYECTO.md`.
+> **Estado: Fases 1–5 completadas y verificadas** (infraestructura · identidad · media core ·
+> galería pública · Studio y paneles). Falta el despliegue y la documentación autogenerada.
+> Vivirá en `galeria.dvloprbn.dev`. Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
 
@@ -89,6 +89,10 @@ docker compose exec gallery_backend npx ts-node scripts/seed-demo.ts
 
 Siembra una galería pública de ejemplo (8 imágenes por el pipeline real) y muestra su URL.
 Ábrela en http://localhost:3051 — el índice enlaza a `/g/<slug>`.
+
+Para operarla desde el navegador, entra en http://localhost:3051/login con una cuenta de prueba
+(p. ej. `admin+gallery@example.com` / `TestOnly123!`) y usa **Studio** (crear/gestionar álbumes,
+subir imágenes, editar tema) y **Administración** (usuarios y roles).
 
 ## Pruebas
 
