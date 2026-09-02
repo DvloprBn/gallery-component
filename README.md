@@ -1,20 +1,25 @@
 # Galería
 
-Galería de imágenes con personalización y animaciones de grado profesional. **Demo de vitrina** que
-vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
-atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
+Portafolio de fotografía con personalización de galería y animaciones de grado profesional.
+**Demo de vitrina** que vivirá dentro del portafolio DvloprBn — no un producto independiente.
+Estándar de producción: sin atajos simulados, seguridad como prioridad #1, documentado al grado de
+poder leerse completo.
 
 > **Estado: todas las fases planificadas completas** (infra · identidad · media · galería pública ·
-> Studio · seguridad transversal · documentación autogenerada · artefactos de despliegue).
-> Queda el despliegue real (VPS + DNS de `galeria.dvloprbn.dev`) y enlazarla desde el portafolio.
-> Ver `ESTADO_PROYECTO.md`.
+> Studio · seguridad transversal · documentación autogenerada · artefactos de despliegue ·
+> reencuadre como portafolio de fotografía). Queda el despliegue real (VPS + DNS de
+> `galeria.dvloprbn.dev`) y enlazarla desde el portafolio. Ver `ESTADO_PROYECTO.md`.
 
-## Qué va a tener
+## Qué tiene
 
+- **Sitio público** con aspecto de portafolio: portada con hero, `/trabajo` (colecciones),
+  `/sobre`, `/contacto` (formulario con honeypot). La identidad —nombre, declaración, texto de
+  «Sobre», hero— la fija `site_settings` y se edita desde el gestor.
 - **Galería pública** con layouts configurables (masonry / justificado / grid / carrusel),
   imágenes responsivas y perezosas, lightbox y animaciones con presupuesto de rendimiento.
-- **Studio** para el dueño de cada galería: crear álbumes, subir y reordenar imágenes, elegir
-  tema y layout — todo configurable al crear, no "crear y luego editar".
+- **Gestor del sitio** para el dueño: crear colecciones, subir y reordenar imágenes, elegir
+  tema/layout, marcar "destacada" — todo configurable al crear, no "crear y luego editar" —,
+  además de ajustes de identidad y bandeja de contacto (roles `admin`+).
 - **Identidad real**: login en 3 pasos (correo → contraseña → 2FA si aplica), JWT en cookie
   httpOnly + refresh con rotación, roles dinámicos con jerarquía de autoridad, 2FA TOTP.
 - **Seguridad de archivos real**: validación por contenido (magic bytes), re-encode obligatorio,
@@ -77,24 +82,34 @@ nivel igual o superior al suyo.
 - **Álbumes** (dueño o admin): `/albums` (CRUD) · `/albums/:id/share-tokens` (crear/revocar)
 - **Imágenes**: `POST /albums/:id/images` (subida) · `GET /albums/:id/images` ·
   `POST /albums/:id/images/reorder` · `PATCH /images/:id` · `DELETE /images/:id`
-- **Entrega pública**: `GET /galleries` (índice) · `GET /g/:slug` (galería) · `GET /media/:key`
-  (archivos, driver de disco)
+- **Entrega pública**: `GET /galleries` (índice; `?featured=true` para las de portada) ·
+  `GET /g/:slug` (galería) · `GET /media/:key` (archivos, driver de disco)
+- **Sitio**: `GET /site` (identidad pública) · `PATCH /site` (`admin`+) ·
+  `POST /contact` (público, honeypot) · `GET|PATCH|DELETE /contact/messages` (`admin`+)
 
 Referencia completa en Swagger (`http://localhost:3050/docs`, solo dev), en el portal de
 documentación (`http://localhost:8098`) y en Compodoc (`http://localhost:8099`).
 
 ## Ver la demo
 
+El portafolio poblado ("Mara Solís" + 5 colecciones con fotos de uso libre) se siembra **desde el
+host** (necesita la carpeta de fotos y el backend publicado en `:3050`):
+
 ```bash
-docker compose exec gallery_backend npx ts-node scripts/seed-demo.ts
+npx ts-node gallery_backend/scripts/seed-portfolio.ts
 ```
 
-Siembra una galería pública de ejemplo (8 imágenes por el pipeline real) y muestra su URL.
-Ábrela en http://localhost:3051 — el índice enlaza a `/g/<slug>`.
+Es idempotente por título. Variables opcionales: `SEED_PORTFOLIO_API` (por defecto
+`http://localhost:3050`), `SEED_PORTFOLIO_IMAGES` (carpeta raíz de fotos). Luego abre
+http://localhost:3051.
+
+> `scripts/seed-demo.ts` (dentro del contenedor) sigue disponible para una única galería de
+> degradados generados con `sharp`, sin archivos externos.
 
 Para operarla desde el navegador, entra en http://localhost:3051/login con una cuenta de prueba
-(p. ej. `admin+gallery@example.com` / `TestOnly123!`) y usa **Studio** (crear/gestionar álbumes,
-subir imágenes, editar tema) y **Administración** (usuarios y roles).
+(p. ej. `admin+gallery@example.com` / `TestOnly123!`) y usa **Gestor del sitio** (colecciones,
+subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administración**
+(usuarios y roles).
 
 ## Pruebas
 

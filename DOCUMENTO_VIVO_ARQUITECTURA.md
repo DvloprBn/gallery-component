@@ -979,3 +979,100 @@ tras un `restart`/`--force-recreate` del contenedor de desarrollo: Nest borra `d
 modo incremental, ve por el `.tsbuildinfo` que "todo está compilado" y **no re-emite nada** →
 `Cannot find module '/app/dist/main'` en bucle. Se quitó `incremental` (el proyecto es pequeño, el
 build completo es rápido). `*.tsbuildinfo` sigue en `.gitignore` y `.dockerignore`.
+
+## 11. Fase 10 — Reencuadre como portafolio de fotografía (completada y verificada, 2026-09-02)
+
+El sitio deja de presentarse como "una galería de imágenes genérica" y pasa a ser el **portafolio
+de un autor**. La demo de personalización/animación no cambia (sigue siendo el motor de
+colecciones); lo que cambia es el marco: identidad de sitio, portada editorial y páginas de autor.
+La sección pública de identidad (entrar / crear cuenta) **se mantiene visible** — es parte de la
+demostración.
+
+### 11.1 Backend — identidad de sitio y contacto
+
+Migración `20260902200738_portfolio`:
+
+- `albums.featured BOOLEAN NOT NULL DEFAULT false` — marca "sale en la portada". Solo tiene efecto
+  si la colección es `public`.
+- `site_settings` — **fila única** (`id = 1`, se crea al primer `GET`): `site_title`, `owner_name`,
+  `tagline`, `bio` (600), `about_body` (texto largo), `contact_email`, `contact_intro`,
+  `instagram`, `hero_image_id` (UUID de una imagen de álbum público), `updated_at`.
+- `contact_messages` — `message_id` uuid PK, `name`, `email`, `body` (4000), `ip_address` (solo
+  registro interno), `is_read`, `created_at`, índice `(is_read, created_at)`.
+
+Módulos nuevos (ambos `@Global` no — `SiteModule` sí, para inyectar `SiteService` en otros):
+
+| Ruta | Acceso | Qué hace |
+|---|---|---|
+| `GET /site` | `@Public()` | Ajustes públicos; resuelve las URLs del hero. Crea la fila por defecto. |
+| `PATCH /site` | `admin`/`director`/`super` | Merge de los campos presentes. Valida que `heroImageId` pertenezca a un álbum **público** (el hero se sirve sin firma en una página cacheable). |
+| `POST /contact` | `@Public()`, 202, `@Throttle(5/min)` | Guarda el mensaje y avisa por correo (degrada si el correo falla). **Honeypot**: si `website` llega con contenido → se acepta y se descarta en silencio. |
+| `GET /contact/messages` | `admin`+ | Bandeja (últimos 200). |
+| `PATCH /contact/messages/:id` | `admin`+ | Marca leído / no leído. |
+| `DELETE /contact/messages/:id` | `admin`+, 204 | Borra. |
+
+`albums` DTO/servicio ganan `featured`; `MediaService.listPublic({ featuredOnly })` filtra y ordena
+por `sort_order` → `created_at`; `GET /galleries?featured=true` lo expone.
+
+### 11.2 Frontend — chrome y páginas de autor
+
+- **`SiteHeader` / `SiteFooter`** (reemplazan a `SiteNav`): la marca es `owner_name`, nav pública
+  `Trabajo · Sobre · Contacto`, y a la derecha el estado de sesión (Gestor / Administración / Salir,
+  o Entrar / Crear cuenta). Dentro de una colección (`/g/...`) la cabecera se vuelve transparente y
+  el pie se oculta.
+- **`lib/site.tsx`** — `SiteProvider`/`useSite`: el layout raíz resuelve `GET /site` en el servidor
+  y lo reparte por contexto (evita el parpadeo del nombre en cada navegación).
+- **Portada (`/`)** — hero a sangre completa con `BlurhashCanvas` detrás de la imagen de
+  `site.hero`, degradado de oscurecimiento, `owner_name` en serif display, `tagline`, CTA a
+  `/trabajo`; luego bio breve y cuadrícula de **colecciones destacadas**
+  (`GET /galleries?featured=true`).
+- **`/trabajo`** — índice de todas las colecciones públicas, en el orden del gestor.
+- **`/sobre`** — retrato (reutiliza el hero), `about_body` partido en párrafos por línea en blanco,
+  una "Selección de encargos" (contenido fijo de demo — no hay clientes reales) y CTA a contacto.
+- **`/contacto`** — `contact_intro` + datos directos (correo, Instagram) + formulario
+  (`ContactForm`, cliente) que hace `POST /contact`. El **honeypot** `website` va en un `.hp-field`
+  fuera de pantalla y fuera del orden de tabulación.
+- **`/g/[slug]`** — enlace de regreso "← Trabajo" solo si la colección es pública.
+- Tipografía display **serif de sistema** (`--pf-display`, sin webfont) para titulares de
+  portafolio; el resto del sistema de tokens CSS no cambia.
+
+### 11.3 Frontend — gestor y administración
+
+- "Studio" → **"Gestor del sitio"**; "álbum" → "colección" en toda la interfaz.
+- `AlbumSettingsForm` gana la casilla **"Destacar en la portada"** (`featured`).
+- **`/studio/ajustes`** (`admin`+) — editor de identidad: todos los textos de `site_settings` +
+  selector de hero poblado con las fotos de las colecciones públicas (se listan vía `/galleries`
+  → `/g/:slug`), con miniatura de vista previa. `''` → `null` al guardar.
+- **`/studio/mensajes`** (`admin`+) — bandeja de contacto con marca de leído y borrado.
+- `/admin` enlaza a ambas.
+
+### 11.4 Datos de demostración — `scripts/seed-portfolio.ts`
+
+Se corre **desde el host** (`npx ts-node gallery_backend/scripts/seed-portfolio.ts`) porque necesita
+leer la carpeta de fotos y llegar al backend publicado en `:3050`. Persona ficticia **"Mara Solís"**
+(fotógrafa documental, Querétaro). Cinco colecciones públicas con fotos de uso libre subidas por el
+**pipeline real** (cada archivo se reduce a ≤ 2400 px con `sharp` antes de subir, para no pasar el
+tope de `UPLOAD_MAX_FILE_BYTES`):
+
+| Colección | Layout | Destacada | Fotos |
+|---|---|---|---|
+| Calle | justified | sí | 14 |
+| Tinta | grid | sí | 14 |
+| Muros | masonry | sí | 14 |
+| Humo | carousel | sí | 14 |
+| Ciudad | masonry | no | 16 |
+
+Idempotente **por título**: una colección que ya existe no se recrea. Fija portada (primera foto) y
+`hero_image_id` (una foto de "Calle") solo si están vacíos. `PATCH /site` se aplica siempre.
+
+### 11.5 Verificación real
+
+- `GET /site` tras el seed → persona completa + `hero` con las 5 URLs de derivados resueltas.
+- `GET /galleries` → 5 colecciones (todas con portada); `?featured=true` → 4.
+- `POST /contact` con `website` vacío → 202 + fila en `contact_messages`; con `website` relleno →
+  202 y **nada** en la tabla (honeypot). `GET /contact/messages` como `super` → la bandeja.
+- `PATCH /site { heroImageId: <foto de álbum privado> }` → 400 (debe ser de un álbum público).
+- Frontend: `/`, `/trabajo`, `/sobre`, `/contacto`, `/g/<slug>` → 200; la portada sirve el `<img>`
+  del hero y las 4 tarjetas destacadas.
+- `next build` con `NODE_ENV=production` → 15 rutas, TypeScript OK. `tsc -p tsconfig.json --noEmit`
+  (backend) OK. **36/36 tests** OK.

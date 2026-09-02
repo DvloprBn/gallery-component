@@ -35,16 +35,20 @@ Consecuencia en el estándar de calidad:
 
 ## §1. Qué es este proyecto
 
-Una **galería de imágenes** con personalización y animaciones de grado profesional. Tres superficies:
+Una **galería de imágenes** con personalización y animaciones de grado profesional, presentada como
+el **portafolio de un fotógrafo** (reencuadre de la Fase 10 — antes era una galería genérica; el
+motor no cambió, sí el marco). Cuatro superficies:
 
 | Superficie | Para quién | Qué hace |
 |---|---|---|
-| **Galería pública** | Cualquier visitante | Ver un álbum publicado: layout elegido por el dueño, animaciones, lightbox, imágenes responsivas y perezosas |
-| **Studio** | Dueño de una galería (usuario autenticado) | Crear álbumes, subir y reordenar imágenes, elegir layout y tema, definir visibilidad |
+| **Sitio público** | Cualquier visitante | Portada editorial con hero, `/trabajo` (colecciones), `/sobre`, `/contacto`; la identidad la fija `site_settings` |
+| **Galería pública** | Cualquier visitante | Ver una colección publicada: layout elegido por el dueño, animaciones, lightbox, imágenes responsivas y perezosas |
+| **Gestor del sitio** | Dueño (usuario autenticado) | Crear colecciones, subir y reordenar imágenes, elegir layout/tema/visibilidad, marcar "destacada"; ajustes de identidad y bandeja de contacto (roles `admin`+) |
 | **Panel de administración** | Roles administrativos | Gestión de usuarios y de roles dinámicos, respetando la jerarquía de autoridad |
 
 No es una tienda: no hay catálogo, carrito ni pagos. Es exclusivamente **gestión y presentación
-de imágenes** + la capa de identidad y acceso que la protege.
+de imágenes** + la capa de identidad y acceso que la protege. La sección pública de acceso
+(entrar / crear cuenta) se mantiene visible: es parte de la demostración.
 
 ---
 
@@ -163,6 +167,12 @@ Sin negocio real detrás → se inventan datos libremente: usuarios ficticios, r
 álbumes e imágenes de prueba (imágenes con licencia libre o generadas). El seed usa correos
 `@example.com` — nunca un correo real, por la decisión D7.
 
+- `prisma/seed.ts` (automático al arrancar el contenedor) — roles del catálogo + una cuenta por
+  rol, contraseña `TestOnly123!`.
+- `scripts/seed-portfolio.ts` (manual, **desde el host**) — persona ficticia "Mara Solís" y
+  5 colecciones públicas con fotos de uso libre subidas por el pipeline real. Idempotente por
+  título. Es lo que da al sitio su aspecto de portafolio poblado.
+
 ---
 
 ## §7. Estándar de documentación de código — requisito de primera clase
@@ -230,3 +240,4 @@ hay nada que probar) y se llena en paralelo a cada pieza que se construya.
 | **7. Seguridad transversal** | `PRUEBAS_SEGURIDAD.md` completo contra cada endpoint, tests `jest` reales | fases 2–6 |
 | **8. Docs autogenerada** | `docs/` (MkDocs+Swagger) + Compodoc en `docker-compose.yml` | fase 2+ |
 | **9. Despliegue** | `docker-compose.prod.yml` + reverse proxy (Caddy) para `galeria.dvloprbn.dev` con la API bajo `/api/*`; Dockerfiles de producción multi-etapa; `.env` de producción (`STORAGE_DRIVER=cloudinary`, `NODE_ENV=production`, sin puertos de datos publicados); enlace desde el portafolio | D8, fases 1–7 |
+| **10. Reencuadre como portafolio** | `site_settings` + `contact_messages` + `albums.featured`; endpoints `/site` y `/contact`; sitio público editorial (portada con hero, `/trabajo`, `/sobre`, `/contacto`); gestor con ajustes de identidad y bandeja; `scripts/seed-portfolio.ts` (persona "Mara Solís" + 5 colecciones) | fases 1–5 |

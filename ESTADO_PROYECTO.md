@@ -3,15 +3,37 @@
 > Bitácora de estado día a día. Se actualiza cada vez que se pide o al cerrar un hito.
 > La estrategia y las decisiones que no cambian seguido viven en `PLAN_DESARROLLO.md`.
 
-Última actualización: **2026-09-01**
+Última actualización: **2026-09-02**
 
 ---
 
 ## 1. Dónde estamos
 
-**Todas las fases + pulido + endurecimiento de producción completos (2026-09-01).**
+**Todas las fases + pulido + endurecimiento + reencuadre como portafolio completos (2026-09-02).**
 
-Último bloque (hardening — el dominio/VPS los gestiona el proyecto del portafolio):
+**Fase 10 — reencuadre como portafolio de fotografía (2026-09-02).** El sitio se presenta como el
+portafolio de un autor; el motor de colecciones/personalización no cambia. La sección pública
+(entrar / crear cuenta) sigue visible.
+
+- **Backend** (migración `20260902200738_portfolio`): `albums.featured`; `site_settings` (fila
+  única con nombre, tagline, bio, texto de «Sobre», contacto, hero); `contact_messages`.
+  Endpoints: `GET/PATCH /site` (lectura pública, escritura `admin`+), `POST /contact` (público,
+  202, honeypot `website`, throttle 5/min), `GET/PATCH/DELETE /contact/messages` (`admin`+).
+  `GET /galleries?featured=true`.
+- **Frontend público**: `SiteHeader`/`SiteFooter` (identidad del sitio; reemplazan `SiteNav`);
+  portada con hero a sangre completa + colecciones destacadas; páginas nuevas `/trabajo`,
+  `/sobre`, `/contacto` (formulario → `POST /contact`). Titulares en serif de sistema.
+- **Gestor**: "Studio" → "Gestor del sitio", "álbum" → "colección"; casilla "Destacar en la
+  portada"; `/studio/ajustes` (editor de identidad + selector de hero) y `/studio/mensajes`
+  (bandeja de contacto).
+- **`scripts/seed-portfolio.ts`** (se corre desde el host): persona ficticia "Mara Solís" +
+  5 colecciones públicas (Calle/Tinta/Muros/Humo/Ciudad) con fotos de uso libre por el pipeline
+  real; idempotente por título.
+- **Verificado**: `GET /site` con hero resuelto; `/galleries` → 5, `?featured=true` → 4; honeypot
+  descarta sin dejar fila; `next build` (prod) OK con 15 rutas; `tsc` backend OK; 36/36 tests.
+- Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §11.
+
+Bloque anterior (hardening — el dominio/VPS los gestiona el proyecto del portafolio):
 
 - **Rate limit global** (`@nestjs/throttler`): 600/min por IP (2400/min para media, `/health`
   exento); los límites de fuerza bruta viven por debajo. Verificado: 650 req → 600×401 + 50×429.
@@ -172,15 +194,18 @@ Lo anterior:
 
 Las fases planificadas (`PLAN_DESARROLLO.md` §10) están **todas completas**: 1 infra · 2 identidad ·
 3 media · 4 galería pública · 5 Studio · 6 animación (resuelta con CSS en la Fase 4) · 7 seguridad
-transversal (`PRUEBAS_SEGURIDAD.md`) · 8 docs · 9 despliegue (artefactos).
+transversal (`PRUEBAS_SEGURIDAD.md`) · 8 docs · 9 despliegue (artefactos) · 10 reencuadre como
+portafolio de fotografía.
 
 Lo que queda, cuando el dueño quiera:
 
 1. **Desplegar de verdad**: VPS + DNS de `galeria.dvloprbn.dev` + `.env.prod` con secretos reales,
-   y `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`.
+   y `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`. Tras el
+   despliegue, correr `scripts/seed-portfolio.ts` apuntando a la API de producción (o sembrar a
+   mano desde el gestor) y **rotar las llaves de Cloudinary/Resend** (el repo es público).
 2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
-3. Opcional: tests de integración de jerarquía/pipeline; probar `STORAGE_DRIVER=cloudinary` contra
-   la cuenta real con `seed-demo`; pulido visual del frontend.
+3. Opcional: prev/next entre colecciones en `/g/[slug]`; probar `STORAGE_DRIVER=cloudinary` contra
+   la cuenta real; sustituir la "Selección de encargos" fija de `/sobre` por contenido editable.
 
 ---
 
@@ -188,6 +213,7 @@ Lo que queda, cuando el dueño quiera:
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-02 | **Fase 10 — reencuadre como portafolio de fotografía.** El sitio pasa de "galería genérica" a portafolio de un autor; el motor de colecciones/personalización/animación no cambia y la sección pública (entrar/crear cuenta) sigue visible. **Backend** (migración `20260902200738_portfolio`): `albums.featured` (sale en la portada); `site_settings` (fila única: `site_title`, `owner_name`, `tagline`, `bio`, `about_body`, `contact_email`, `contact_intro`, `instagram`, `hero_image_id`); `contact_messages` (`is_read`, índice `(is_read, created_at)`). Módulos `site` (`GET /site` público, `PATCH /site` `admin`+; valida que el hero sea de un álbum público) y `contact` (`POST /contact` público 202 con **honeypot** `website` + throttle 5/min; `GET/PATCH/DELETE /contact/messages` `admin`+). `MediaService.listPublic({ featuredOnly })` + `GET /galleries?featured=true`. **Frontend**: `SiteHeader`/`SiteFooter` con la identidad de `GET /site` (reemplazan `SiteNav`); `lib/site.tsx` (`SiteProvider`/`useSite`, el layout resuelve `/site` en el servidor); portada nueva (hero a sangre completa con `BlurhashCanvas` + degradado + `owner_name`/`tagline`/CTA, luego bio y colecciones destacadas); `/trabajo` (índice), `/sobre` (retrato + `about_body` en párrafos + "Selección de encargos" fija de demo), `/contacto` (`ContactForm` → `POST /contact`, honeypot en `.hp-field` fuera de pantalla); `/g/[slug]` con "← Trabajo" si es pública; titulares en **serif de sistema** (`--pf-display`, sin webfont). **Gestor**: "Studio" → "Gestor del sitio", "álbum" → "colección"; `AlbumSettingsForm` gana la casilla "Destacar en la portada"; `/studio/ajustes` (editor de identidad + selector de hero entre fotos públicas con vista previa) y `/studio/mensajes` (bandeja: marcar leído / borrar); `/admin` enlaza a ambas. **`scripts/seed-portfolio.ts`** (se corre desde el host — necesita la carpeta de fotos y el backend en `:3050`): persona ficticia "Mara Solís" (fotógrafa documental, Querétaro) + 5 colecciones públicas Calle/Tinta/Muros/Humo/Ciudad (layouts justified/grid/masonry/carousel/masonry; 4 destacadas) con fotos de uso libre reducidas a ≤2400 px y subidas por el pipeline real; idempotente por título; fija portada y `hero_image_id` solo si están vacíos. **Verificado**: `GET /site` tras el seed → persona + `hero` con las 5 URLs de derivados; `GET /galleries` → 5 (todas con portada), `?featured=true` → 4; `POST /contact` honeypot vacío → 202 + fila, honeypot relleno → 202 sin fila; `PATCH /site` con hero de álbum privado → 400; `/`, `/trabajo`, `/sobre`, `/contacto`, `/g/<slug>` → 200; `next build` (`NODE_ENV=production`) → 15 rutas, TypeScript OK; `tsc` backend OK; **36/36 tests**. Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §11. |
 | 2026-09-01 | **Pulido posterior (punto 4 del plan de cierre).** (1) **Pruebas de 11 a 36, 8 suites**: `slug.util`, `media-signing` (HMAC), `image-pipeline.service.spec.ts` (procesa JPEG válido → original + 4 derivados WebP + BlurHash; EXIF eliminado; rechaza texto/SVG/decompression bomb 81 MP), y **`roles.service.spec.ts` + `users.service.spec.ts` de integración contra el Postgres real** (jerarquía: no crear/gestionar nivel ≥ propio, `is_system` protegido, no borrar rol con cuentas, `max_count`, exclusión de la propia cuenta, no auto-gestión; cada rechazo confirma que la BD no cambió; limpieza en `afterAll`). `test/setup-integration.ts` en `jest.setupFiles` (contenedor: `DATABASE_URL` tal cual; host: carga `../.env` y reescribe a `localhost:5438`). (2) **Cloudinary verificado de verdad** con `STORAGE_DRIVER=cloudinary` y carpeta aislada `gallery_devtest`: álbum público → URLs `image/upload` sin firma (200 `image/webp`); álbum privado → URLs `image/authenticated/s--<sig>--` firmadas (200 con firma, **401 sin ella**); borrado → `uploader.destroy` de todos los recursos, carpeta confirmada en 0 recursos (sin huérfanos). Revertido a `STORAGE_DRIVER=disk` + re-sembrada la demo local. (3) **Pulido visual**: landing (título en degradado, tarjetas con elevación al hover), galería pública (tipografía del encabezado, hover sutil en las imágenes), lightbox (`backdrop-filter: blur`, contador `n/total`, pie enmarcado, botones "pill"). Studio/admin se dejan como estaban. **Hallazgo de entorno**: un `*.tsbuildinfo` en el árbol montado hace que `nest start --watch` no emita `dist/main.js` tras `--force-recreate` → borrar `dist`+`*.tsbuildinfo` en el contenedor; los typechecks manuales van con `tsc -p tsconfig.json` (base). `next build` de producción sigue pasando (11 rutas). |
 | 2026-09-01 | **Fase 8 (documentación autogenerada) completada y verificada.** Plugin `@nestjs/swagger` en `nest-cli.json` → `/api-json` pasa de 0 a **18 schemas** de DTOs sin `@ApiProperty` manual. `docs/` = portal MkDocs Material (`squidfunk/mkdocs-material:9.5.49` + `mkdocs-swagger-ui-tag`), 5 páginas (Inicio, Arquitectura, Jerarquía de roles, Seguridad, API con Swagger UI embebido en vivo). `gallery_compodoc` = contenedor `node:22-slim` que reusa el `node_modules` del backend y corre `compodoc -s -w` (`@compodoc/compodoc` añadido a devDependencies). Ambos en `docker-compose.yml` **solo `127.0.0.1`** (8098 docs, 8099 compodoc). `ALLOWED_ORIGINS` ganó `http://localhost:8098` (CORS del `/api-json`). **Hallazgos**: `compodoc` v2 renombró `--hostname`→`--host` (sin `--host 0.0.0.0` no llegaba el mapeo de puerto); el `npm ci` del build de producción falló hasta regenerar `gallery_backend/package-lock.json` (había cambiado `package.json`: `prisma`→dependencies, `@compodoc/compodoc` nuevo). **Verificado**: `/api-json` 29 rutas/18 schemas + CORS ok; las 5 páginas del portal → 200; `/api/` embebe el `<swagger-ui>`; compodoc sirve el grafo de 14 módulos y **parsea los TSDoc reales** (la página de `AuthService` muestra el texto exacto del código); el build de producción del backend sigue pasando con el plugin activo. |
 | 2026-09-01 | **Fase 9 (despliegue) — artefactos listos y verificados en local.** `gallery_backend/Dockerfile` (build multi-etapa: `npm ci` → `prisma generate` → `nest build` → `npm prune --omit=dev`; runtime `node:22-slim` usuario `node` con node_modules podado + `dist` + `prisma`; arranque = `migrate deploy` + seed roles/cuentas idempotente + `node dist/main.js`; `prisma` movido a `dependencies` para el `migrate deploy` de runtime). `gallery_frontend/Dockerfile` (multi-etapa con `output: 'standalone'`, imagen ≈68 MB; `NEXT_PUBLIC_API_BASE_URL=/api` como `ARG` de build — se hornea en `next build`). `Caddyfile` (un solo site: `/api/*`→backend, resto→frontend; TLS automático). `docker-compose.prod.yml` (Postgres/Redis **sin puertos publicados**; único puerto público = Caddy 80/443; `NODE_ENV=production`, `GLOBAL_PREFIX=api`, `STORAGE_DRIVER=cloudinary`, `env_file: .env.prod`). `.env.prod.example`. `main.ts` activa `trust proxy: 1` en producción (IP real del cliente para la fuerza bruta). **Hallazgos**: `nest build` metía todo en `dist/src/main.js` porque `tsconfig.build.json` incluía `prisma/` y `scripts/` → corregido con `include: ["src/**/*"]` + `rootDir: src` + excludes; el `tsconfig.build.tsbuildinfo` del host se colaba por `COPY . .` y tsc incremental no emitía nada → `*.tsbuildinfo` añadido al `.dockerignore`. **Verificado en local** (`docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`, Caddy en `http://localhost`): 5 contenedores, migrate+seed al arrancar, `/api/health` ok, `/api/galleries` 200, `/` 200 (`<title>Galería</title>`, Next standalone), `/api/api-json` → **404** (Swagger off con `NODE_ENV=production`), login por el mismo origen con cookie `HttpOnly` y `/api/auth/me` devolviendo el usuario. Falta lo que no se puede hacer desde aquí: VPS, DNS de `galeria.dvloprbn.dev`, `.env.prod` real. |
