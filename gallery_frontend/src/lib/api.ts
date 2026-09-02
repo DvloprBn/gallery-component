@@ -41,7 +41,7 @@ export async function fetchGallery(
   return gallerySchema.parse(await response.json());
 }
 
-/** Una tarjeta del índice de galerías públicas. */
+/** Una tarjeta del índice de colecciones públicas. */
 export interface PublicGalleryCard {
   slug: string;
   title: string;
@@ -51,20 +51,65 @@ export interface PublicGalleryCard {
 }
 
 /**
- * Pide el índice de galerías públicas recientes.
+ * Pide el índice de colecciones públicas.
  *
+ * @param featuredOnly - `true` → solo las marcadas para la portada.
  * @returns La lista (vacía si no hay ninguna o si la API falla — el índice no
  *          debe tumbar la portada).
  */
-export async function fetchPublicGalleries(): Promise<PublicGalleryCard[]> {
+export async function fetchPublicGalleries(
+  featuredOnly = false,
+): Promise<PublicGalleryCard[]> {
   try {
-    const response = await fetch(`${serverApiBase()}/galleries`, {
-      cache: 'no-store',
-    });
+    const url = new URL(`${serverApiBase()}/galleries`);
+    if (featuredOnly) {
+      url.searchParams.set('featured', 'true');
+    }
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) return [];
     const data: unknown = await response.json();
     return Array.isArray(data) ? (data as PublicGalleryCard[]) : [];
   } catch {
     return [];
+  }
+}
+
+/** La imagen del hero de la portada, con sus URLs de entrega ya resueltas. */
+export interface SiteHero {
+  imageId: string;
+  width: number;
+  height: number;
+  placeholder: string | null;
+  urls: Record<string, string>;
+}
+
+/** Identidad pública del sitio (portafolio): la devuelve `GET /site`. */
+export interface Site {
+  siteTitle: string;
+  ownerName: string;
+  tagline: string;
+  bio: string;
+  aboutBody: string;
+  contactEmail: string;
+  contactIntro: string;
+  instagram: string;
+  hero: SiteHero | null;
+}
+
+/**
+ * Pide la identidad del sitio (nombre, declaración, "sobre mí", contacto, hero).
+ *
+ * @returns Los ajustes del sitio, o `null` si la API falla — el chrome del
+ *          sitio degrada a valores neutros, nunca peta la página.
+ */
+export async function fetchSite(): Promise<Site | null> {
+  try {
+    const response = await fetch(`${serverApiBase()}/site`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as Site;
+  } catch {
+    return null;
   }
 }

@@ -46,5 +46,9 @@ export default async function GalleryPage({ params, searchParams }: PageProps) {
   if (!gallery) {
     notFound();
   }
-  return <GalleryView gallery={gallery} />;
+  // Solo las colecciones públicas se listan en "Trabajo"; para el resto no
+  // tiene sentido ofrecer el regreso a un índice que no las contiene.
+  const backHref =
+    gallery.album.visibility === 'public' ? '/trabajo' : undefined;
+  return <GalleryView gallery={gallery} backHref={backHref} />;
 }

@@ -30,6 +30,12 @@ function Inner() {
         <li>
           <Link href="/admin/roles">Roles →</Link>
         </li>
+        <li>
+          <Link href="/studio/ajustes">Ajustes del sitio →</Link>
+        </li>
+        <li>
+          <Link href="/studio/mensajes">Mensajes →</Link>
+        </li>
       </ul>
     </main>
   );

@@ -15,6 +15,8 @@ export interface AlbumFormValues {
   description: string;
   visibility: (typeof VISIBILITIES)[number];
   layout: (typeof LAYOUTS)[number];
+  /** Aparece en la portada del sitio (solo surte efecto si es pública). */
+  featured: boolean;
   theme: {
     colors: { bg: string; fg: string; accent: string };
     typography: { fontFamily: (typeof FONT_FAMILIES)[number]; scale: number };
@@ -28,6 +30,7 @@ const DEFAULTS: AlbumFormValues = {
   description: '',
   visibility: 'private',
   layout: 'masonry',
+  featured: false,
   theme: {
     colors: { bg: '#0b0b0f', fg: '#f5f5f7', accent: '#ff5d3a' },
     typography: { fontFamily: 'system', scale: 1 },
@@ -45,6 +48,7 @@ function fromAlbum(album?: AlbumRow): AlbumFormValues {
     description: album.description ?? '',
     visibility: album.visibility,
     layout: album.layout,
+    featured: album.featured ?? false,
     theme: {
       colors: { ...DEFAULTS.theme.colors, ...t.colors },
       typography: { ...DEFAULTS.theme.typography, ...t.typography },
@@ -148,6 +152,20 @@ export function AlbumSettingsForm({
               </option>
             ))}
           </select>
+        </label>
+        <label className="span-2 inline-check">
+          <input
+            type="checkbox"
+            checked={values.featured}
+            onChange={(e) => patch((d) => (d.featured = e.target.checked))}
+          />
+          <span>
+            Destacar en la portada
+            <span className="hint">
+              {' '}
+              — solo surte efecto si la colección es pública.
+            </span>
+          </span>
         </label>
       </div>
 

@@ -48,7 +48,7 @@ function Manage() {
   }, [load]);
 
   if (notFound) {
-    return <p className="page-note">Álbum no encontrado.</p>;
+    return <p className="page-note">Colección no encontrada.</p>;
   }
   if (!album) {
     return <p className="page-note">Cargando…</p>;
@@ -71,7 +71,7 @@ function Manage() {
         <h1>{album.title}</h1>
         {album.visibility !== 'private' && (
           <a href={`/g/${album.slug}`} target="_blank" rel="noreferrer" className="link-button">
-            Ver galería ↗
+            Ver colección ↗
           </a>
         )}
       </div>
@@ -104,7 +104,7 @@ function Manage() {
       <section className="panel-section danger-zone">
         <h2>Zona peligrosa</h2>
         <button type="button" className="danger" onClick={deleteAlbum}>
-          Borrar este álbum
+          Borrar esta colección
         </button>
       </section>
     </main>

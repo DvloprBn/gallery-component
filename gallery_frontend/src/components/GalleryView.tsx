@@ -12,14 +12,27 @@ import { Lightbox } from './Lightbox';
  * lightbox.
  *
  * @param props.gallery - La galería (álbum + imágenes) ya validada.
+ * @param props.backHref - Si se pasa, pinta un enlace de regreso sobre el
+ *        título (p. ej. al índice de trabajo).
  */
-export function GalleryView({ gallery }: { gallery: Gallery }) {
+export function GalleryView({
+  gallery,
+  backHref,
+}: {
+  gallery: Gallery;
+  backHref?: string;
+}) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const { album, images } = gallery;
 
   return (
     <main className="g-root" style={themeToCssVars(album.theme)}>
       <header className="g-header">
+        {backHref ? (
+          <a href={backHref} className="g-back">
+            ← Trabajo
+          </a>
+        ) : null}
         <h1 className="g-title">{album.title}</h1>
         {album.description ? (
           <p className="g-description">{album.description}</p>

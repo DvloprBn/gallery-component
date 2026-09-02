@@ -10,6 +10,8 @@ export interface AlbumRow {
   theme: Record<string, unknown>;
   cover_image_id: string | null;
   sort_order: number;
+  /** Se muestra en la portada del sitio (solo aplica a colecciones públicas). */
+  featured: boolean;
   image_count: number;
   created_at: string;
   updated_at: string;
