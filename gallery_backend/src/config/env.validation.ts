@@ -65,7 +65,11 @@ export function validateEnv(
         `STORAGE_DRIVER=cloudinary pero faltan: ${missingCloudinary.join(', ')}`,
       );
     }
-  } else if (config.STORAGE_DRIVER !== 'disk') {
+  } else if (config.STORAGE_DRIVER === 'disk') {
+    if (!config.STORAGE_DISK_ROOT || String(config.STORAGE_DISK_ROOT).trim() === '') {
+      throw new Error('STORAGE_DRIVER=disk requiere STORAGE_DISK_ROOT.');
+    }
+  } else {
     throw new Error(
       `STORAGE_DRIVER debe ser "disk" o "cloudinary" (recibido: "${String(
         config.STORAGE_DRIVER,

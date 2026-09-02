@@ -12,18 +12,19 @@
 > Arranca **vacío**: sin endpoints todavía no hay nada que probar. Se llena en paralelo a cada
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
-Estado global: **Fase 2 (identidad) completada.** Verificados con `curl` contra el backend en vivo
-los puntos de OWASP API Top 10 que aplican a identidad (ver más abajo). El bloque de **seguridad
-de archivos** (F1–F14) arranca con la Fase 3 (media).
+Estado global: **Fases 2 (identidad) y 3 (media) completadas.** Verificados con `curl` + `sharp`
+contra el backend en vivo los puntos de OWASP API Top 10 que aplican y el bloque de **seguridad de
+archivos** (F1–F14 — ver más abajo). Pendiente para producción: confirmar API9 (inventario) y
+correr F7/F10 con volumen/espera reales.
 
-### OWASP API Security Top 10 — cobertura tras la Fase 2
+### OWASP API Security Top 10 — cobertura tras la Fase 3
 
 | # | Categoría | Estado |
 |---|---|---|
-| API1 — IDOR | ✅ Parcial: `/users/:id`, `/roles/:id` filtran por jerarquía, no solo por `:id`. El grueso (media privada) llega en la Fase 3. |
+| API1 — IDOR | ✅ Probado: `/users/:id`, `/roles/:id` por jerarquía; **álbumes e imágenes privadas** filtran por dueño (otro usuario → 404/403); `/media/:key` privado exige firma HMAC. |
 | API2 — Broken Authentication | ✅ Probado: anti-enumeración (`login/step1` idéntico), challenge token de 2FA nunca es sesión (401 en `/auth/me`), logout revoca el refresh en BD, reuso de refresh → cascada, JWT `HS256` fijo. |
 | API3 — Mass Assignment | ✅ Probado: propiedad extra en el body (`role_id` en registro) → 400 por `forbidNonWhitelisted`. |
-| API4 — Unrestricted Resource Consumption | ✅ Probado: 10 fallos de login → 429 + fila `security_events`; mismo mecanismo en 2FA. Falta el límite de subida (Fase 3). |
+| API4 — Unrestricted Resource Consumption | ✅ Probado: fuerza bruta login/2FA → 429; **subida**: `limits.fileSize` → 413, `limitInputPixels` → 400, rate limit 120/h por usuario. |
 | API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409). |
 | API6 — Sensitive Business Flows | ✅ Parcial: registro y login limitados por el mismo mecanismo de API4. |
 | API7 — SSRF | No aplica todavía (sin "importar imagen por URL" ni OAuth). |
@@ -72,41 +73,24 @@ de archivos** (F1–F14) arranca con la Fase 3 (media).
 
 ---
 
-## OWASP API Security Top 10 (2023) — cobertura planeada
-
-| # | Categoría | Aplica | Estado |
-|---|---|---|---|
-| API1 | Broken Object Level Authorization (IDOR) | Sí — álbumes e imágenes privadas | ⬜ Pendiente |
-| API2 | Broken Authentication | Sí — login en 3 pasos, 2FA, refresh | ⬜ Pendiente |
-| API3 | Broken Object Property Level Authorization (mass assignment) | Sí | ⬜ Pendiente |
-| API4 | Unrestricted Resource Consumption | Sí — subida de imágenes es el punto crítico | ⬜ Pendiente |
-| API5 | Broken Function Level Authorization | Sí — panel admin, jerarquía de roles | ⬜ Pendiente |
-| API6 | Unrestricted Access to Sensitive Business Flows | Parcial — registro masivo, subida masiva | ⬜ Pendiente |
-| API7 | Server Side Request Forgery (SSRF) | Solo si se agrega "importar imagen por URL" | No aplica todavía |
-| API8 | Security Misconfiguration | Sí — cabeceras, CORS, portal de docs interno | ⬜ Pendiente |
-| API9 | Improper Inventory Management | Sí | ⬜ Pendiente |
-| API10 | Unsafe Consumption of APIs | Solo si se integra un proveedor externo (Cloudinary, OAuth) | No aplica todavía |
-
----
-
 ## Bloque específico — Seguridad de archivos de imagen
 
 | # | Prueba | Qué valida | Estado |
 |---|---|---|---|
-| F1 | Tipo falsificado por extensión | Subir `shell.php`/`x.svg` renombrado a `.jpg` → rechazado por **contenido real** (magic bytes), no por extensión | ⬜ Pendiente |
-| F2 | Tipo falsificado por `Content-Type` | `Content-Type: image/jpeg` sobre un archivo que no lo es → rechazado | ⬜ Pendiente |
-| F3 | Payload embebido / polyglot | Un JPEG válido con datos ejecutables tras el marcador EOI → el re-encode con `sharp` los elimina; el archivo servido no los contiene | ⬜ Pendiente |
-| F4 | SVG con `<script>` | Rechazado por defecto; si se habilita SVG, servido sanitizado + `Content-Type` forzado + `Content-Disposition: attachment` | ⬜ Pendiente |
-| F5 | Decompression bomb | Imagen declarada 50 000 × 50 000 → rechazada por `limitInputPixels` antes de decodificar | ⬜ Pendiente |
-| F6 | DoS por tamaño | Archivo de 500 MB → cortado por `limits.fileSize` del interceptor, nunca bufferizado entero | ⬜ Pendiente |
-| F7 | DoS por volumen | 10 000 subidas seguidas → rate limit dedicado + fila `security_events` tipo `upload_abuse` | ⬜ Pendiente |
-| F8 | IDOR de imagen privada | Cuenta A pide `/media/<key de B>` o `/images/<id de B>` → 403/404, nunca el archivo | ⬜ Pendiente |
-| F9 | URL firmada manipulada | Cambiar `exp` o la firma de una URL firmada → 403; una válida no expirada → 200 | ⬜ Pendiente |
-| F10 | URL firmada expirada | Esperar a que caduque → 403 | ⬜ Pendiente |
-| F11 | Fuga de EXIF/GPS | La imagen servida no conserva coordenadas GPS ni metadatos personales del original | ⬜ Pendiente |
-| F12 | Enumeración de álbumes | Fuerza bruta de slug/ID no revela álbumes `private`/`unlisted`; no aparecen en sitemap ni listados | ⬜ Pendiente |
-| F13 | Path traversal en nombre | `../../etc/passwd` como nombre de archivo → saneado; `storage_key` siempre opaco y generado por el servidor | ⬜ Pendiente |
-| F14 | Ruta de storage adivinable | Los `storage_key` son aleatorios (UUID), no secuenciales ni derivados del nombre/usuario | ⬜ Pendiente |
+| F1 | Tipo falsificado por extensión | Texto plano renombrado `.jpg` (con `Content-Type: image/jpeg`) → `sharp` no lo decodifica → **400** | ✅ Probado 2026-09-01 |
+| F2 | Tipo falsificado por `Content-Type` | Ídem F1 — el `Content-Type` del cliente se ignora; manda `sharp` | ✅ Probado 2026-09-01 |
+| F3 | Payload embebido / polyglot | El re-encode con `sharp` reescribe la imagen entera — nada tras el EOI sobrevive (mismo mecanismo confirmado por F11) | ✅ Cubierto por diseño |
+| F4 | SVG con `<script>` | `<svg><script>` renombrado → formato `svg` no está en la lista blanca → **400** | ✅ Probado 2026-09-01 |
+| F5 | Decompression bomb | PNG 9000×9000 (81 MP, 253 KB) → **400** por `limitInputPixels` (tope `UPLOAD_MAX_IMAGE_PIXELS`) | ✅ Probado 2026-09-01 |
+| F6 | DoS por tamaño | Archivo de 20 MB (tope 15 MiB) → **413** cortado en el `FileInterceptor` | ✅ Probado 2026-09-01 |
+| F7 | DoS por volumen | Rate limit dedicado (120 subidas/hora por usuario, contador en Redis) → 429 | ⬜ Implementado, falta prueba en runtime |
+| F8 | IDOR de imagen privada | Otro usuario: `GET /albums/:id` → 404, `GET /albums/:id/images` → 404, `DELETE /images/:id` → 403; `/media/:key` de un privado sin firma → 404 | ✅ Probado 2026-09-01 |
+| F9 | URL firmada manipulada | `exp`+`sig` inventados → **404**; firma HMAC válida no expirada → 200 | ✅ Probado 2026-09-01 |
+| F10 | URL firmada expirada | `verifyMediaSignature` rechaza si `exp*1000 < now` (TTL por defecto 300 s) | ⬜ Implementado, falta prueba con espera real |
+| F11 | Fuga de EXIF/GPS | JPEG con 212 B de EXIF + GPS subido → el original **servido** tiene 0 bytes de EXIF (`sharp().metadata()`) | ✅ Probado 2026-09-01 |
+| F12 | Enumeración de álbumes | `GET /g/:slug` de un privado sin token → **404** (indistinguible de inexistente); `getOwned` devuelve 404, no 403 | ✅ Probado 2026-09-01 |
+| F13 | Path traversal en nombre | `original_name` saneado (`basename` + lista blanca); `storage_key` lo genera el servidor; `DiskStorageDriver.pathFor` revalida el patrón `<uuid>.<ext>` antes de tocar el FS | ✅ Cubierto por diseño |
+| F14 | Ruta de storage adivinable | `storage_key` = `randomUUID()` + extensión canónica; nada derivado del cliente | ✅ Cubierto por diseño |
 
 ---
 

@@ -105,6 +105,49 @@ factor, se fijó **`otplib@12`** — la API estable que usan todos los ejemplos 
 No es pereza: es preferir lo probado en el punto donde un bug sutil significa "cualquier código
 pasa el 2FA". La v13 se adoptará cuando esté rodada.
 
+### E8. Por qué el pipeline de imagen no usa una librería de "magic bytes"
+
+**Archivo**: `src/media-processing/image-pipeline.service.ts`.
+
+Lo habitual para "¿de qué tipo es este archivo de verdad?" es una librería que lee los primeros
+bytes (`file-type` y similares). Aquí se descartó, por dos razones: (1) su versión actual es
+ESM-only y choca con el build CommonJS de Nest; (2) es **redundante**. `sharp` (libvips) tiene que
+decodificar el contenido real para re-codificarlo — que es lo que hacemos de todos modos. Si
+`sharp` no puede leerlo, no es una imagen; y `sharp().metadata().format` dice qué es en realidad.
+Se comprueba contra una lista blanca (`jpeg/png/webp/avif`); un `.jpg` que en realidad es texto, o
+un SVG (que es XML ejecutable, nunca se acepta), fallan aquí con 400.
+
+### E9. Cómo se "limpia" una imagen al subirla (y por qué)
+
+**Archivo**: `src/media-processing/image-pipeline.service.ts` (`process`).
+
+Cada imagen que entra se **re-codifica** de cero con `sharp` antes de guardarse. Efectos:
+- **Se van los metadatos EXIF/GPS.** Una foto de celular lleva dentro las coordenadas de dónde se
+  tomó — un dato personal que no tiene por qué acabar en un CDN público. `sharp` no conserva
+  metadatos salvo que se lo pidas; `.rotate()` sin argumentos aplica la orientación EXIF a los
+  píxeles y luego la descarta. Verificado: un JPEG con 212 bytes de EXIF sale con 0.
+- **Muere cualquier payload escondido.** Un "polyglot" (un archivo que es JPEG válido y a la vez
+  otra cosa, con datos pegados después del fin de la imagen) queda reducido a solo la imagen.
+- **Se normaliza el formato** y se generan 4 tamaños WebP (`thumb`/`small`/`medium`/`large`) para
+  que la galería nunca sirva un archivo de 4000 px dentro de un hueco de 240.
+
+### E10. Dos formas de dar acceso temporal a un archivo privado
+
+**Archivos**: `src/storage/media-signing.ts`, `src/storage/disk-storage.driver.ts`,
+`src/storage/cloudinary-storage.driver.ts`.
+
+Una imagen de un álbum `private` nunca tiene una URL adivinable ni permanente. El backend, tras
+verificar que quien pide tiene acceso, genera una URL de **vida corta**:
+- **Driver de disco**: `/media/<key>?exp=<epoch>&sig=<hmac>`. `sig` es `HMAC-SHA256(secreto,
+  key.exp)`. El cliente no puede fabricarla porque no conoce `MEDIA_URL_SIGNING_SECRET`; el
+  servidor la revalida en tiempo constante y comprueba `exp`. Sin firma o con firma mala → 404
+  (no 403 — no confirmamos que el recurso existe).
+- **Driver de Cloudinary**: el recurso se sube como `type: authenticated` y se entrega con una URL
+  firmada por Cloudinary con `expires_at`. Mismo concepto, distinta implementación.
+
+En ambos casos el `storage_key` es un UUID aleatorio: no se deriva del nombre del archivo, del
+usuario ni de nada secuencial.
+
 ---
 
 ## Mapa de conceptos pendientes

@@ -547,3 +547,80 @@ y una cuenta de prueba por rol (`<rol>+gallery@example.com`, contraseña `TestOn
   `security_events` (`type=login_bruteforce`, `attempts=10`, `status=nuevo`).
 - `tsc` limpio; 11 tests de `jest` (utilidades puras) verdes. Datos de prueba borrados después
   (BD de vuelta a las 6 cuentas + 6 roles sembrados).
+
+---
+
+## 4. Fase 3 — Media core (completada y verificada, 2026-09-01)
+
+### 4.1 Qué se construyó
+
+**`storage`** — abstracción `StorageService` + `StorageDriver` (interfaz). Dos implementaciones:
+- **`DiskStorageDriver`** (dev): escribe bajo `STORAGE_DISK_ROOT` con claves `<uuid>.<ext>`; las
+  URLs apuntan de vuelta a `GET /media/:key` (firmadas con HMAC para privados). Valida el formato
+  de la clave antes de tocar el FS (path traversal).
+- **`CloudinaryStorageDriver`** (prod): sube con `type: 'upload'` (public/unlisted) o
+  `type: 'authenticated'` + URL firmada con expiración (private); `allowed_formats` como defensa en
+  profundidad. La clave guarda `"<deliveryType>:<public_id>"` para reconstruir la URL.
+- `media-signing.ts` — HMAC-SHA256 de `key.exp` con `MEDIA_URL_SIGNING_SECRET`; verificación en
+  tiempo constante + chequeo de expiración.
+
+**`media-processing`** — `ImagePipelineService.process(buffer)`:
+1. `sharp(buffer, { limitInputPixels })` + `.metadata()` — **`sharp` es la única autoridad de
+   tipo**: si no decodifica → no es imagen; si el `format` no está en `{jpeg,png,webp,avif}` → 400
+   (SVG rechazado siempre: es XML ejecutable). No se usa `file-type` — sería redundante.
+2. Re-codificación del original: `.rotate()` aplica y descarta la orientación EXIF; `sharp` no
+   conserva metadatos ⇒ **EXIF/GPS eliminados**. Salida JPEG (mozjpeg q88) o PNG.
+3. Derivados WebP: `thumb` 240 / `small` 640 / `medium` 1280 / `large` 2048, `withoutEnlargement`.
+4. `checksum_sha256` del original re-codificado.
+5. BlurHash 4×4 (placeholder); si falla, `''` — nunca tumba la subida.
+
+**`albums`** — CRUD (`visibility`/`layout`/`theme` se fijan al crear), enlaces de compartir
+(`album_share_tokens`, opaco + `sha256` en BD, caducidad opcional), `canManage` (dueño o rol
+`admin`/`director`/`super`). `getOwned` devuelve **404** (no 403) sin acceso, para no revelar
+existencia. `theme` se rechaza si su JSON supera 4 KB (no es CSS libre).
+
+**`images`** — `upload` (rate limit 120/h por usuario en Redis → pipeline → `storage.put` original
++ 4 derivados → transacción `images` + `image_variants` + `image_count`, y portada si el álbum no
+tiene; **compensación**: si la transacción falla, se borran los objetos ya subidos), `listForAlbum`
+(Studio), `update` (alt/caption/orden), `reorder` (la lista debe ser exactamente las imágenes del
+álbum), `remove` (borra objetos + fila + ajusta `image_count`/portada).
+
+**`media`** (entrega pública, rutas `@Public()`):
+- `GET /g/:slug` — galería por slug. `public`/`unlisted` → abierta; `private` → exige `?token=`
+  válido (no revocado, no caducado). Sin acceso → 404. Devuelve álbum + imágenes ordenadas con
+  URLs de entrega ya resueltas según visibilidad.
+- `GET /media/:key` — sirve archivos del driver de disco. `private` ⇒ exige `exp`+`sig` HMAC
+  válidos, si no 404. Cabeceras: `Content-Type` real, `X-Content-Type-Options: nosniff`,
+  `Cache-Control` (`public, max-age=3600, immutable` / `private, no-store`).
+
+### 4.2 Decisiones / hallazgos
+
+- **Se descartó `file-type`.** v22 es ESM-only (fricción con el build CommonJS de Nest) y, sobre
+  todo, es redundante: `sharp` decodifica el contenido real y reporta el formato — si `sharp` no
+  puede leerlo, no es una imagen. Una dependencia menos y un vector de fallo menos.
+- **`theme` es `Prisma.InputJsonValue`**, no `Record<string, unknown>` — Prisma 7 no acepta
+  `unknown` en un campo `Json`. Se castea en el punto de escritura.
+- Cascada de Prisma (`onDelete: Cascade`) limpia `images`/`image_variants`/`album_share_tokens` al
+  borrar el álbum, pero **los objetos del almacenamiento se borran a mano antes** (Prisma no sabe
+  de archivos).
+
+### 4.3 Verificación real (curl + `sharp` contra el backend en vivo)
+
+- **Tipo falsificado**: texto plano renombrado `.jpg` → **400**; SVG con `<script>` → **400**.
+- **Subida válida**: JPEG 1600×1200 con EXIF+GPS (212 bytes de EXIF) → `imageId`, blurhash de 36
+  chars, 4 variantes (`thumb/small/medium/large`), dimensiones conservadas.
+- **EXIF eliminado**: el original **servido** no tiene ningún byte de EXIF (verificado con
+  `sharp().metadata()`).
+- **Decompression bomb**: PNG 9000×9000 (81 MP, 253 KB) → **400** (`limitInputPixels`).
+- **Límite de tamaño**: archivo de 20 MB → **413** (cortado en el interceptor, `limits.fileSize`).
+- **URL de privado**: lleva `?exp=&sig=`; `GET /media/:key` sin firma → **404**; con firma
+  manipulada → **404**.
+- **IDOR**: otro usuario → `GET /albums/:id` **404**, `GET /albums/:id/images` **404**,
+  `DELETE /images/:id` **403**.
+- **Galería privada** sin token → **404**; con enlace de compartir válido → **200** (devuelve
+  imágenes + `layout` + `theme`).
+- **Público**: al cambiar `visibility` a `public`, la URL del `thumb` ya no lleva firma y
+  `GET` la sirve **200** `image/webp`.
+- **Limpieza**: tras borrar imagen y álbum, la BD vuelve a 6 cuentas / 6 roles / 0 álbumes / 0
+  imágenes / 0 variantes y **0 archivos** en el volumen de almacenamiento.
+- `tsc` limpio; 11 tests `jest` verdes.

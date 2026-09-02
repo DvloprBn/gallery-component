@@ -4,8 +4,8 @@ Galería de imágenes con personalización y animaciones de grado profesional. *
 vivirá dentro del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin
 atajos simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
-> **Estado: Fase 2 (identidad) completada y verificada.** Falta la Fase 3 (media / subida de
-> imágenes) en adelante. Ver `ESTADO_PROYECTO.md`.
+> **Estado: Fases 1–3 completadas y verificadas** (infraestructura · identidad · media core).
+> Sigue la Fase 4 (galería pública en el frontend). Ver `ESTADO_PROYECTO.md`.
 
 ## Qué va a tener
 
@@ -65,6 +65,19 @@ Una por rol, contraseña `TestOnly123!`:
 Jerarquía de autoridad: `usuario`(0) → `staff`(1) → `manager`(2) → `admin`(3) →
 `director`(4, máx. 1) → `super`(5, máx. 1). Nadie puede crear ni gestionar un rol o una cuenta de
 nivel igual o superior al suyo.
+
+## API (resumen)
+
+- **Identidad**: `POST /auth/register` · `/auth/login/step1|step2|2fa` · `/auth/refresh` ·
+  `/auth/logout` · `GET /auth/me` · `PATCH /auth/me/password` · `/auth/forgot-password` ·
+  `/auth/reset-password` · `/two-factor/setup|confirm-setup|disable|recovery-codes/regenerate`
+- **Administración** (`admin`/`director`/`super`): `/roles` (CRUD) · `/users` (listar, alta, editar)
+- **Álbumes** (dueño o admin): `/albums` (CRUD) · `/albums/:id/share-tokens` (crear/revocar)
+- **Imágenes**: `POST /albums/:id/images` (subida) · `GET /albums/:id/images` ·
+  `POST /albums/:id/images/reorder` · `PATCH /images/:id` · `DELETE /images/:id`
+- **Entrega pública**: `GET /g/:slug` (galería) · `GET /media/:key` (archivos, driver de disco)
+
+Referencia completa en Swagger (`/docs`, solo dev).
 
 ## Pruebas
 

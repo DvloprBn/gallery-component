@@ -12,16 +12,21 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { TwoFactorModule } from './two-factor/two-factor.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
+import { StorageModule } from './storage/storage.module';
+import { MediaProcessingModule } from './media-processing/media-processing.module';
+import { AlbumsModule } from './albums/albums.module';
+import { ImagesModule } from './images/images.module';
+import { MediaModule } from './media/media.module';
 import { HealthController } from './health/health.controller';
 
 /**
  * Módulo raíz.
  *
  * Infraestructura (config validada, Prisma, Redis, correo, eventos de
- * seguridad) + identidad completa (auth, 2FA, roles, usuarios). Dos guards
+ * seguridad, almacenamiento) + identidad (auth, 2FA, roles, usuarios) + media
+ * (procesamiento de imagen, álbumes, imágenes, entrega pública). Dos guards
  * globales, en este orden: `JwtAuthGuard` (exige sesión salvo `@Public()`) y
- * luego `RolesGuard` (aplica `@Roles()`). Los módulos de media llegan en la
- * Fase 3 — ver `DOCUMENTO_VIVO_ARQUITECTURA.md` §1.6.
+ * luego `RolesGuard` (aplica `@Roles()`).
  */
 @Module({
   imports: [
@@ -30,10 +35,15 @@ import { HealthController } from './health/health.controller';
     RedisModule,
     MailModule,
     SecurityEventsModule,
+    StorageModule,
+    MediaProcessingModule,
     AuthModule,
     TwoFactorModule,
     RolesModule,
     UsersModule,
+    AlbumsModule,
+    ImagesModule,
+    MediaModule,
   ],
   controllers: [HealthController],
   providers: [

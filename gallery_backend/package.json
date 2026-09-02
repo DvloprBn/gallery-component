@@ -41,7 +41,9 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.4",
+    "blurhash": "^2.0.5",
+    "cloudinary": "^2.11.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
@@ -60,7 +62,8 @@
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/multer": "^2.0.0"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"
