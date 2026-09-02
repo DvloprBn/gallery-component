@@ -1,0 +1,217 @@
+// Schema de la Galería — congelado 2026-09-01 (ver DOCUMENTO_VIVO_ARQUITECTURA.md §1.3).
+// Cambios posteriores van por migración, nunca editando una migración ya aplicada.
+
+// Prisma 7: la URL de conexión ya NO vive aquí — está en ../prisma.config.ts
+// (para el CLI de Migrate) y se pasa al PrismaClient vía un driver adapter
+// (@prisma/adapter-pg) en src/common/prisma/prisma.service.ts.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────── IDENTIDAD ───────────────────────────
+
+// Roles dinámicos — nunca un enum fijo de Postgres. `level` es el nivel de
+// autoridad (0 = usuario público … N = superadministrador). `max_count`
+// limita cuántas cuentas ACTIVAS pueden tener ese rol (null = sin límite).
+// `is_system` marca los roles sembrados para que no se puedan borrar y
+// dejar el sistema sin acceso administrativo.
+model roles {
+  role_id     Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(200)
+  level       Int      @default(0)
+  max_count   Int?
+  is_system   Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users[]
+}
+
+model users {
+  user_id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                String  @unique @db.VarChar(255)
+  password_hash        String
+  name                 String? @db.VarChar(150)
+  role_id              Int
+  must_change_password Boolean @default(false)
+  is_active            Boolean @default(true)
+
+  // 2FA (TOTP). El secreto es SIMÉTRICO: el servidor necesita leerlo de
+  // vuelta para verificar el código de la app del usuario, así que se
+  // CIFRA en reposo (AES-256-GCM, llave propia en variable de entorno —
+  // nunca el JWT_SECRET), no se hashea.
+  totp_secret_encrypted String?
+  totp_enabled          Boolean @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  roles                 roles                   @relation(fields: [role_id], references: [role_id], onDelete: Restrict)
+  refresh_tokens        refresh_tokens[]
+  password_reset_tokens password_reset_tokens[]
+  totp_recovery_codes   totp_recovery_codes[]
+  albums                albums[]
+  images                images[]
+
+  @@index([role_id])
+}
+
+// Rotación con ventana de gracia. Si un token ya usado se vuelve a
+// presentar FUERA de la ventana de gracia -> se revocan TODAS las sesiones
+// de esa cuenta (asume robo del token).
+model refresh_tokens {
+  token_id   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  revoked    Boolean   @default(false)
+  used_at    DateTime? @db.Timestamptz(6)
+  ip_address String?   @db.VarChar(45)
+  user_agent String?
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// Códigos de recuperación de 2FA — un solo uso, se muestran UNA vez al
+// activar 2FA, se guardan hasheados (bcrypt) porque nunca necesitan
+// volver a mostrarse, solo compararse.
+model totp_recovery_codes {
+  code_id    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  code_hash  String
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model password_reset_tokens {
+  token_id   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+// Fuerza bruta (login y 2FA) y reuso de refresh token. Conteo en Redis
+// con ventana deslizante; la fila real solo se crea al cruzar el umbral.
+model security_events {
+  security_event_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fingerprint       String    @unique @db.VarChar(64)
+  type              String    @db.VarChar(30) // login_bruteforce | twofactor_bruteforce | refresh_token_reuse | upload_abuse
+  identifier        String
+  ip_address        String?   @db.VarChar(45)
+  user_agent        String?
+  attempts          Int
+  occurrence_count  Int       @default(1)
+  status            String    @default("nuevo") @db.VarChar(20)
+  first_seen_at     DateTime  @default(now()) @db.Timestamptz(6)
+  last_seen_at      DateTime  @default(now()) @db.Timestamptz(6)
+  resolved_at       DateTime? @db.Timestamptz(6)
+  resolved_note     String?
+}
+
+// ─────────────────────────── MEDIA / GALERÍA ───────────────────────────
+
+// Un álbum es la unidad de personalización y de visibilidad.
+//   public   -> indexable, visible en listados
+//   unlisted -> accesible solo con el slug/enlace, no listado
+//   private  -> solo el dueño y roles administrativos
+// `layout` y `theme` viven en el álbum, no en cada imagen: son la
+// "personalización de grado profesional" del proyecto.
+model albums {
+  album_id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  owner_user_id  String   @db.Uuid
+  title          String   @db.VarChar(150)
+  slug           String   @unique @db.VarChar(180)
+  description    String?  @db.VarChar(2000)
+  visibility     String   @default("private") @db.VarChar(20)
+  layout         String   @default("masonry") @db.VarChar(20) // masonry | justified | grid | carousel
+  theme          Json     @default("{}") // tokens de diseño (colores, tipografía, radios, espaciado, motion)
+  cover_image_id String?  @db.Uuid
+  sort_order     Int      @default(0)
+  image_count    Int      @default(0) // desnormalizado, mantenido dentro de la misma transacción
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  owner        users                @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+  images       images[]
+  share_tokens album_share_tokens[]
+
+  @@index([owner_user_id])
+  @@index([visibility])
+}
+
+// La imagen ORIGINAL subida, ya normalizada (re-encode con sharp, sin EXIF).
+// `storage_key` es la ruta opaca dentro del StorageService (nunca el nombre
+// original del cliente). `checksum_sha256` permite deduplicar y detectar
+// corrupción. El original re-encodeado se guarda para poder regenerar
+// derivados en el futuro, pero NUNCA se sirve directo a la galería.
+model images {
+  image_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  album_id        String   @db.Uuid
+  owner_user_id   String   @db.Uuid
+  storage_key     String   @unique
+  original_name   String?  @db.VarChar(255) // saneado, solo para mostrar/descargar
+  mime_type       String   @db.VarChar(50) // detectado por contenido, no por extensión
+  width           Int
+  height          Int
+  bytes           Int
+  checksum_sha256 String   @db.VarChar(64)
+  placeholder     String?  @db.VarChar(120) // blurhash o color dominante
+  alt_text        String?  @db.VarChar(500)
+  caption         String?  @db.VarChar(2000)
+  sort_order      Int      @default(0)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  album    albums          @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+  owner    users           @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+  variants image_variants[]
+
+  @@index([album_id])
+  @@index([owner_user_id])
+}
+
+// Derivados responsivos generados por el pipeline. Se sirven ESTOS, nunca
+// el original. `format` moderno (webp/avif) con fallback jpeg.
+model image_variants {
+  variant_id  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  image_id    String   @db.Uuid
+  storage_key String   @unique
+  label       String   @db.VarChar(20) // thumb | small | medium | large
+  format      String   @db.VarChar(10) // webp | avif | jpeg
+  width       Int
+  height      Int
+  bytes       Int
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+
+  @@unique([image_id, label, format])
+  @@index([image_id])
+}
+
+// Enlace de acceso a un álbum unlisted/private con caducidad opcional.
+// Distinto de la URL firmada de cada archivo: esto da acceso al ÁLBUM.
+model album_share_tokens {
+  share_token_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  album_id       String    @db.Uuid
+  token_hash     String    @unique
+  expires_at     DateTime? @db.Timestamptz(6)
+  revoked        Boolean   @default(false)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  album albums @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+
+  @@index([album_id])
+}

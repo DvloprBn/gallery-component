@@ -1,0 +1,29 @@
+# Dependencias
+**/node_modules/
+
+# Builds / cachés
+**/dist/
+**/.next/
+**/out/
+**/build/
+**/coverage/
+*.tsbuildinfo
+
+# Prisma — cliente generado (se regenera con `prisma generate`); las
+# migraciones SÍ se versionan.
+**/generated/
+**/.prisma/
+
+# Entorno — NUNCA subir secretos reales
+.env
+.env.local
+.env.*.local
+
+# Almacenamiento local de media (driver disco en desarrollo)
+gallery_backend/storage/
+/storage/
+
+# Logs y sistema
+*.log
+npm-debug.log*
+.DS_Store
