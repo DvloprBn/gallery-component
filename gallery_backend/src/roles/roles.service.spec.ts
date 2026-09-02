@@ -35,11 +35,13 @@ describe('RolesService (integración, Postgres real)', () => {
   });
 
   it('bloquea crear un rol de nivel igual o superior al del actor', async () => {
-    const before = await prisma.roles.count();
     await expect(
       service.create({ name: `${tag}_alto`, level: 3 }, actor(3)),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(await prisma.roles.count()).toBe(before); // nada se creó
+    // comprobación acotada (no un count global — otras suites corren en paralelo)
+    expect(
+      await prisma.roles.findUnique({ where: { name: `${tag}_alto` } }),
+    ).toBeNull();
   });
 
   it('permite crear un rol de nivel estrictamente menor', async () => {

@@ -49,14 +49,16 @@ describe('UsersService (integración, Postgres real)', () => {
 
   it('un actor no puede crear una cuenta de nivel igual o superior al suyo', async () => {
     const director = await prisma.roles.findUniqueOrThrow({ where: { name: 'director' } }); // nivel 4
-    const before = await prisma.users.count();
     await expect(
       service.create(
         { email: `d+${tag}@example.com`, name: 'D', roleId: director.role_id },
         actor(3),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(await prisma.users.count()).toBe(before);
+    // comprobación acotada (no un count global — otras suites corren en paralelo)
+    expect(
+      await prisma.users.findUnique({ where: { email: `d+${tag}@example.com` } }),
+    ).toBeNull();
   });
 
   it('un actor sí puede crear una cuenta de nivel estrictamente menor', async () => {
