@@ -18,7 +18,12 @@
 - **Cloudinary verificado de verdad** (`STORAGE_DRIVER=cloudinary`, carpeta aislada): público sin
   firma, privado con URL `authenticated` firmada (401 sin firma), borrado sin huérfanos. Revertido
   a `disk` después.
-- **Pulido visual** de las superficies de vitrina (landing + galería pública + lightbox).
+- **Pulido visual** en dos pasadas: (1) landing + galería pública + lightbox; (2) Studio y
+  administración con aspecto de panel (sistema de tokens CSS, secciones como tarjetas, nav
+  pegajosa con enlace activo, inputs con foco anillado, tablas con hover, listas como tarjetas,
+  `auth-card` con sombra). Solo CSS + un ajuste en `SiteNav`.
+- **Flake de tests corregido**: dos suites de integración usaban `count()` global en paralelo →
+  comprobación acotada. 3 corridas seguidas limpias, 36/36.
 - Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §9.
 
 **Fase 8 (documentación autogenerada) — completada y verificada (2026-09-01).**
