@@ -27,7 +27,7 @@ function row(overrides: Record<string, unknown> = {}) {
 describe('SiteService', () => {
   let prisma: {
     site_settings: { upsert: jest.Mock };
-    images: { findUnique: jest.Mock };
+    images: { findUnique: jest.Mock; findFirst: jest.Mock };
   };
   let storage: { urlFor: jest.Mock };
   let service: SiteService;
@@ -35,7 +35,7 @@ describe('SiteService', () => {
   beforeEach(() => {
     prisma = {
       site_settings: { upsert: jest.fn().mockResolvedValue(row()) },
-      images: { findUnique: jest.fn() },
+      images: { findUnique: jest.fn(), findFirst: jest.fn() },
     };
     storage = { urlFor: jest.fn((key: string) => `https://cdn.test/${key}`) };
     service = new SiteService(
@@ -90,6 +90,7 @@ describe('SiteService', () => {
   it('update() rechaza un hero cuyo álbum NO es público (sin escribir)', async () => {
     prisma.images.findUnique.mockResolvedValue({
       image_id: 'img-1',
+      status: 'published',
       album: { visibility: 'unlisted' },
     });
 
@@ -99,17 +100,34 @@ describe('SiteService', () => {
     expect(prisma.site_settings.upsert).not.toHaveBeenCalled();
   });
 
-  it('update() acepta un hero de un álbum público', async () => {
-    prisma.images.findUnique
-      .mockResolvedValueOnce({ image_id: 'img-1', album: { visibility: 'public' } })
-      .mockResolvedValueOnce({
-        image_id: 'img-1',
-        storage_key: 'orig.webp',
-        width: 1600,
-        height: 1067,
-        placeholder: 'blur',
-        variants: [{ label: 'large', storage_key: 'large.webp' }],
-      });
+  it('update() rechaza un hero que no está publicado (sin escribir)', async () => {
+    prisma.images.findUnique.mockResolvedValue({
+      image_id: 'img-1',
+      status: 'draft',
+      album: { visibility: 'public' },
+    });
+
+    await expect(
+      service.update({ heroImageId: '44444444-4444-4444-8444-444444444444' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.site_settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('update() acepta un hero publicado de un álbum público', async () => {
+    prisma.images.findUnique.mockResolvedValue({
+      image_id: 'img-1',
+      status: 'published',
+      album: { visibility: 'public' },
+    });
+    // toPublic() resuelve el hero con findFirst (solo si sigue publicado)
+    prisma.images.findFirst.mockResolvedValue({
+      image_id: 'img-1',
+      storage_key: 'orig.webp',
+      width: 1600,
+      height: 1067,
+      placeholder: 'blur',
+      variants: [{ label: 'large', storage_key: 'large.webp' }],
+    });
     prisma.site_settings.upsert.mockResolvedValue(row({ hero_image_id: 'img-1' }));
 
     const result = await service.update({

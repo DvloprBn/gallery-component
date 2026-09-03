@@ -15,7 +15,11 @@ import { ImagePipelineService } from '../media-processing/image-pipeline.service
 import { StorageService } from '../storage/storage.service';
 import type { MediaVisibility } from '../storage/storage-driver.interface';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface';
-import { ReorderImagesDto, UpdateImageDto } from './dto/image.dto';
+import {
+  BulkStatusDto,
+  ReorderImagesDto,
+  UpdateImageDto,
+} from './dto/image.dto';
 
 /** Un archivo subido (memory storage de multer). */
 export interface UploadedImageFile {
@@ -181,7 +185,7 @@ export class ImagesService {
     return images.map((image) => this.toDto(image, image.variants, visibility));
   }
 
-  /** Edita alt / caption / orden de una imagen. */
+  /** Edita alt / caption / orden / estado de curación de una imagen. */
   async update(imageId: string, actor: AuthenticatedUser, dto: UpdateImageDto) {
     const { image, visibility } = await this.loadManageable(imageId, actor);
     const updated = await this.prisma.images.update({
@@ -190,10 +194,44 @@ export class ImagesService {
         ...(dto.altText !== undefined ? { alt_text: dto.altText } : {}),
         ...(dto.caption !== undefined ? { caption: dto.caption } : {}),
         ...(dto.sortOrder !== undefined ? { sort_order: dto.sortOrder } : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
       include: { variants: true },
     });
     return this.toDto(updated, updated.variants, visibility);
+  }
+
+  /**
+   * Cambia el estado de curación de varias imágenes de un álbum a la vez
+   * (publicar / pasar a borrador / archivar en bloque — el flujo real cuando
+   * se sube en ancho y luego se cura).
+   *
+   * @param albumId - Álbum de las imágenes.
+   * @param actor - Usuario autenticado (dueño del álbum o admin).
+   * @param dto - `imageIds` + `status` destino.
+   * @returns `{ ok, updated }` con cuántas filas cambiaron.
+   * @throws BadRequestException si algún id no pertenece a ese álbum.
+   */
+  async setStatusBulk(
+    albumId: string,
+    actor: AuthenticatedUser,
+    dto: BulkStatusDto,
+  ): Promise<{ ok: true; updated: number }> {
+    const album = await this.albums.getOwned(albumId, actor);
+    const owned = await this.prisma.images.findMany({
+      where: { album_id: album.album_id, image_id: { in: dto.imageIds } },
+      select: { image_id: true },
+    });
+    if (owned.length !== new Set(dto.imageIds).size) {
+      throw new BadRequestException(
+        'Todas las imágenes deben pertenecer a este álbum.',
+      );
+    }
+    const result = await this.prisma.images.updateMany({
+      where: { album_id: album.album_id, image_id: { in: dto.imageIds } },
+      data: { status: dto.status },
+    });
+    return { ok: true, updated: result.count };
   }
 
   /** Aplica un orden nuevo a todas las imágenes de un álbum. */
@@ -292,6 +330,7 @@ export class ImagesService {
       alt_text: string | null;
       caption: string | null;
       sort_order: number;
+      status: string;
       created_at: Date;
     },
     variants: { label: string; format: string; storage_key: string; width: number; height: number }[],
@@ -309,6 +348,7 @@ export class ImagesService {
       altText: image.alt_text,
       caption: image.caption,
       sortOrder: image.sort_order,
+      status: image.status,
       createdAt: image.created_at,
       urls: {
         original: this.storage.urlFor(image.storage_key, visibility),

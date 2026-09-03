@@ -62,9 +62,13 @@ export class SiteService {
         where: { image_id: dto.heroImageId },
         include: { album: { select: { visibility: true } } },
       });
-      if (!image || image.album.visibility !== 'public') {
+      if (
+        !image ||
+        image.album.visibility !== 'public' ||
+        image.status !== 'published'
+      ) {
         throw new BadRequestException(
-          'La imagen del hero debe pertenecer a una colección pública.',
+          'La imagen del hero debe ser una foto publicada de una colección pública.',
         );
       }
     }
@@ -109,8 +113,10 @@ export class SiteService {
   }): Promise<PublicSite> {
     let hero: HeroImage | null = null;
     if (settings.hero_image_id) {
-      const image = await this.prisma.images.findUnique({
-        where: { image_id: settings.hero_image_id },
+      // Solo se sirve como hero si sigue publicada (pudo archivarse después
+      // de fijarla); si no, la portada cae a su degradado.
+      const image = await this.prisma.images.findFirst({
+        where: { image_id: settings.hero_image_id, status: 'published' },
         include: { variants: true },
       });
       if (image) {

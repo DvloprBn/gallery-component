@@ -219,9 +219,21 @@ una galería más), y cerró las cinco decisiones el mismo día:
   padre aún **no tiene** claves Stripe).
 - **D13** comercial/editorial: campo `category` en `albums`, IA plana por ahora.
 
-Fases nuevas en `PLAN_DESARROLLO.md` §10: **10b Curación**, **11 Protección**, **12 Licenciamiento**,
+Fases nuevas en `PLAN_DESARROLLO.md` §10: **10b Curación** ✅, **11 Protección**, **12 Licenciamiento**,
 **13 Pago (diferida)**. Diseño técnico + modelo de datos + *por qué* de cada decisión en
-`DOCUMENTO_VIVO_ARQUITECTURA.md` **§12** (solo diseño, sin construir).
+`DOCUMENTO_VIVO_ARQUITECTURA.md` **§12**.
+
+**Fase 10b — Curación (completada 2026-09-03).** `images.status` (`published`/`draft`/`archived`,
+default `draft`); migración `20260903220045_image_status` (backfill a `published` para no ocultar
+nada). `PATCH /images/:id` acepta `status`; `POST /albums/:id/images/status` cambia en bloque
+(valida pertenencia al álbum). `GET /g/:slug` y `/galleries` muestran/cuentan **solo publicadas**
+(siempre, tenga o no enlace de compartir); portada y `hero_image_id` resilientes si la foto deja de
+estar publicada; `PATCH /site` exige hero publicado. Gestor (`/studio/[albumId]`): selector de
+estado por imagen + selección múltiple + acciones en bloque + recuentos en vivo; tarjetas `draft`
+punteadas, `archived` atenuadas. `seed-portfolio.ts` cura: sube todo (244) y publica una selección
+repartida (~81: 16/14/15/12/14/10). Verificado end-to-end. **53 tests / 11 suites**
+(nuevo `images.service.spec.ts`; `site.service.spec.ts` ampliado). Detalle en
+`DOCUMENTO_VIVO_ARQUITECTURA.md` §13.
 
 **Repositorio remoto: hecho (2026-09-02).** El código está en `github.com/DvloprBn/gallery-component`
 (rama `main`, historial completo). El `origin` local usa **SSH** (`git@github.com:DvloprBn/gallery-component.git`),
@@ -237,9 +249,9 @@ Lo que queda, cuando el dueño quiera:
 2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
 3. Opcional: prev/next entre colecciones en `/g/[slug]`; probar `STORAGE_DRIVER=cloudinary` contra
    la cuenta real; sustituir la "Selección de encargos" fija de `/sobre` por contenido editable.
-4. **Arrancar la Fase 10b** (curación) → **11** (protección: marca de agua + derechos) → **12**
-   (licenciamiento). D9–D13 ya resueltas; falta la confirmación del dueño para **salir de modo
-   diseño y escribir código**. La Fase 13 (pago Stripe) espera a ≈2026‑09‑17.
+4. **Fase 10b hecha.** Sigue la **Fase 11** (protección: formulario de marca de agua + estampado en
+   el pipeline + registro de derechos + embebido IPTC/XMP) → **12** (licenciamiento). La Fase 13
+   (pago Stripe) espera a ≈2026‑09‑17. `CLAUDE.md` "Qué es este proyecto" actualizado al marco nuevo.
 
 ---
 
@@ -247,6 +259,7 @@ Lo que queda, cuando el dueño quiera:
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-03 | **Fase 10b — Curación (construida).** Salió de modo diseño (el dueño confirmó el orden de ejecución). `CLAUDE.md` "Qué es este proyecto" reescrito a los 4 ejes (personalización, animación, **protección**, **licenciamiento/venta**). **Backend**: `images.status` (`published`/`draft`/`archived`, default `draft`, índice `(album_id,status)`), migración `20260903220045_image_status` con backfill a `published`; `PATCH /images/:id` acepta `status`; `POST /albums/:id/images/status` (bloque, valida pertenencia → 400); `MediaService.listPublic`/`getGallery` filtran y cuentan solo `published`, portada cae a la primera publicada; `SiteService.toPublic` y `PATCH /site` exigen hero publicado. **Frontend**: `ImageGrid` del gestor con selector de estado por imagen (optimista), checkbox + barra de acciones en bloque, recuentos en vivo, tarjetas `draft` punteadas y `archived` atenuadas; `ImageDto.status` en `studio-types.ts` + CSS. **Seed**: `seed-portfolio.ts` sube todo (244) y publica una selección repartida (`spread()`): 16/14/15/12/14/10 = ~81; portada = foto publicada. **Verificado**: `POST .../images/status` con id ajeno → 400; archivar 4 de "Calle" → `/g` 89→85, restaurado; seed curado → `/galleries` 6 col / 81 publicadas, gestor de "Calle" ve 89 (16 pub + 73 arch); `/`, `/trabajo`, `/sobre`, `/g/<slug>`, `/studio/<id>` → 200; `next build` prod OK; `tsc` OK; **53 tests / 11 suites** (nuevo `images.service.spec.ts`, `site.service.spec.ts` ampliado). Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §13. |
 | 2026-09-02 | **Decisiones D9–D13 resueltas + diseño técnico del reencuadre.** El dueño cerró las cinco decisiones abiertas: **D9** marca de agua obligatoria en `public`, con **formulario en el gestor para subir el PNG** (+ texto de respaldo), estampada por el servidor en todos los derivados públicos; **D10** — aclarado que "metadatos" = **capturar** un registro de derechos por imagen (titular, autor, crédito, año, aviso, término de licencia, descripción, keywords) **y embeberlo** en IPTC/XMP en cada archivo servido, con el pipeline pasando de "quitar todo el EXIF" a "quitar solo GPS/serie/personal, poner derechos"; **D11** solo licencia digital por ahora (provisional); **D12** Fase 12 sin cobro, **Fase 13 = Stripe modo test tras flag `PAYMENTS_ENABLED`, diferida ≈2026‑09‑17** (hasta tener cuenta Stripe — el proyecto padre `projects/dvlopr-bn` cobrará de verdad y aún **no tiene** claves Stripe; esta demo solo usará claves de prueba, nunca `live` en el repo público); **D13** campo `category` en `albums` con IA plana por ahora. `PLAN_DESARROLLO.md` §4 pasa D9–D13 a "resueltas" con el *por qué* de cada una; §2 y §10 ajustados (formulario de marca de agua, registro de derechos, Fase 13 con fecha). **`DOCUMENTO_VIVO_ARQUITECTURA.md` §12 nueva** — diseño completo sin construir: modelo de datos (`images.status`/`images.rights`, `albums.category`, campos de marca de agua y derechos en `site_settings`, tablas `license_requests`/`licenses`/`delivery_tokens`), pipeline de marca de agua (`sharp().composite`, tras el re-encode, antes de los derivados), embebido IPTC/XMP, flujo de licenciamiento con diagrama, pago diferido, e impacto en lo ya construido. Sin código — sigue en modo diseño hasta que el dueño confirme. |
 | 2026-09-02 | **Reencuadre de alcance: portafolio que protege y vende.** El dueño, tras investigar cómo se arma un portafolio de fotografía que sirva de verdad, amplió el objetivo: el sitio debe demostrar el **kit real para publicar, proteger y vender** obra — marca de agua, derechos embebidos, el archivo bueno tras un muro, y un flujo de licenciamiento — no una galería más "que hoy nadie va a ver". Datos ficticios, funcionalidad real. Analizada la investigación del dueño (7 principios de portafolio + guía tipo VSCO): **adoptados** "mostrar menos de lo que se tiene" (→ estado de publicación por imagen + selección curada), "contacto en un clic desde cualquier lugar", "agrupar por tipo no por cliente", "un scroll por especialidad"; **ya cubiertos** "abrir con imagen no con menú", "poseer el dominio" (D8), "segundas opiniones" (enlaces de compartir); **opcional** separar comercial/editorial (campo `category`); **descartado como software** el resto (proceso del fotógrafo, no del sitio). `PLAN_DESARROLLO.md` reescrito: §1 (marco), §2 (capas nuevas de **protección** y **licenciamiento**), §4 (decisiones abiertas **D9–D13**), §10 (fases **10b Curación**, **11 Protección**, **12 Licenciamiento**, **13 Pago opcional**). Sin código: modo diseño, y las fases 11+ están bloqueadas hasta cerrar D9–D13. Recomendaciones del arquitecto para cada decisión en §4. |
 | 2026-09-02 | **Fix: las imágenes no cargaban en el navegador (CORP).** `helmet()` pone `Cross-Origin-Resource-Policy: same-origin` en toda respuesta; en desarrollo el frontend (`:3051`) y la entrega de media (`:3050`) son orígenes distintos, así que el navegador se negaba a pintar cada `<img>` (con `curl` no se veía — CORP no se aplica ahí; salían 200). `GET /media/:key` pasa a marcar `Cross-Origin-Resource-Policy: cross-origin` — es contenido público pensado para CDN, y el control de los privados es la firma HMAC de la URL, no CORP. Las respuestas **JSON** de la API conservan `same-origin`. Verificado: `/media/:key` → `cross-origin`, `/galleries` y `/site` → `same-origin`; `tsc` + 50 tests OK. Ficha F15 en `PRUEBAS_SEGURIDAD.md`. |

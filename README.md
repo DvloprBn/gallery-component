@@ -92,17 +92,18 @@ documentación (`http://localhost:8098`) y en Compodoc (`http://localhost:8099`)
 
 ## Ver la demo
 
-El portafolio poblado ("Mara Solís" + **6 colecciones / 244 fotos** de uso libre) se siembra
-**desde el host** (necesita la carpeta de fotos y el backend publicado en `:3050`):
+El portafolio poblado ("Mara Solís" + **6 colecciones**) se siembra **desde el host** (necesita la
+carpeta de fotos y el backend publicado en `:3050`):
 
 ```bash
 npx ts-node gallery_backend/scripts/seed-portfolio.ts
 ```
 
-Consume **todo** el contenido de la carpeta de origen (una carpeta por colección + los archivos
-sueltos de la raíz → "Cuaderno"). Es **convergente**: borra y rehace cada colección en cada
-corrida. Necesita `UPLOAD_MAX_UPLOADS_PER_HOUR` alto (el `.env` de dev ya lo trae en 5000; en
-producción se deja 120). Variables opcionales: `SEED_PORTFOLIO_API` (`http://localhost:3050`),
+**Sube** todo el contenido de la carpeta de origen (244 fotos: una carpeta por colección + los
+sueltos de la raíz → "Cuaderno") y **publica una selección curada** de ~81 (el resto queda
+`archived` — "mostrar menos de lo que se tiene"). Es **convergente**: borra y rehace cada colección
+en cada corrida. Necesita `UPLOAD_MAX_UPLOADS_PER_HOUR` alto (el `.env` de dev ya lo trae en 5000;
+en producción se deja 120). Variables opcionales: `SEED_PORTFOLIO_API` (`http://localhost:3050`),
 `SEED_PORTFOLIO_IMAGES` (carpeta raíz de fotos). Luego abre http://localhost:3051.
 
 > `scripts/seed-demo.ts` (dentro del contenedor) sigue disponible para una única galería de
@@ -119,10 +120,11 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-50 tests, 10 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+53 tests, 11 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), dos
 suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas) y las
-unitarias de `SiteService` / `ContactService` (validación del hero, honeypot, escape del correo).
+unitarias de `SiteService` / `ContactService` / `ImagesService` (validación del hero publicado,
+honeypot, escape del correo, cambio de estado en bloque acotado al álbum).
 
 Pruebas de seguridad replicables de la Fase 10 (RBAC de `/site` y `/contact`, honeypot, XSS
 almacenado, throttle, fuga de IP):

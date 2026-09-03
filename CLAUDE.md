@@ -6,18 +6,28 @@
 
 ## Qué es este proyecto
 
-Una **galería de imágenes** con dos ejes que la definen:
+El **portafolio real de un fotógrafo**: no solo enseña su obra, también la **protege** y permite
+**venderla** (licenciarla) sin regalarla ni depender de plataformas de terceros. Cuatro ejes:
 
 1. **Personalización de grado profesional** — temas, layouts (masonry / grid justificado / carrusel),
    tokens de diseño configurables por el dueño de la galería, sin tener que tocar código.
 2. **Animaciones de grado profesional** — transiciones, entrada escalonada de elementos, interacción
    fluida (zoom, lightbox, arrastre para reordenar), con un **presupuesto de rendimiento real**
    (Core Web Vitals) y respeto a `prefers-reduced-motion`.
+3. **Protección de la obra** — marca de agua estampada por el servidor en todo lo público, el
+   original de alta resolución nunca servido en público, registro de derechos por imagen embebido
+   en IPTC/XMP, aviso de copyright. (Fase 11 — ver `PLAN_DESARROLLO.md` §2 y §4 D9/D10.)
+4. **Licenciamiento y venta** — flujo por foto: solicitud de licencia → cotización → entrega del
+   archivo limpio por URL firmada de un solo uso. Pago con Stripe (modo test) como fase posterior
+   opcional. (Fases 12–13 — ver `PLAN_DESARROLLO.md` §2 y §4 D11/D12.)
 
-**No es un producto ni un negocio.** Es una **demo de vitrina** que vivirá **dentro del portafolio
-DvloprBn** (`projects/dvlopr-bn`), en el mismo dominio: una demostración "súper completa" de lo que
-el dueño puede construir, para que un cliente potencial la vea y contrate más trabajo. No es un
-sistema que se despliega solo; su lugar final es como pieza del portafolio.
+**No es un producto ni un negocio del dueño, ni una plataforma de stock.** Es una **demo de estudio
+con datos ficticios** (persona "Mara Solís") que vivirá **dentro del portafolio DvloprBn**
+(`projects/dvlopr-bn`): una demostración "súper completa" de lo que el dueño puede construir, para
+que un cliente potencial la vea y contrate más trabajo. **Cada función es real y funcional** (sin
+atajos simulados); solo los datos son inventados. No es un sistema que se despliega solo; su lugar
+final es como pieza del portafolio. El cobro real, si lo hay, lo hará el **proyecto padre**
+(`projects/dvlopr-bn`), no esta demo.
 
 Objetivos reales:
 

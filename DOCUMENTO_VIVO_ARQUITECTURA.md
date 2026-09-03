@@ -1220,3 +1220,69 @@ Visitante                     Gestor (fotógrafo)                 Sistema
 | `/studio/ajustes` (Fase 10) | + sección "Marca de agua" (subir PNG / texto / opacidad / colocación) y "Derechos por defecto". |
 | Bandeja `/studio/mensajes` (Fase 10) | pasa a "Bandeja" con tipos `contact` + `license_request`. |
 | `PRUEBAS_SEGURIDAD.md` | F11 reescrita (metadatos); fichas nuevas para marca de agua no evitable, entrega de un solo uso, RBAC de `/licenses`. |
+
+## 13. Fase 10b — Curación (completada y verificada, 2026-09-03)
+
+Primera fase del reencuadre (§12). "Mostrar menos de lo que se tiene": el fotógrafo sube en ancho
+a un archivo y solo una **selección publicada** se ve en la galería pública.
+
+### 13.1 Estado por imagen
+
+`images.status` (`VARCHAR(16)`, índice `(album_id, status)`):
+
+| Estado | Qué significa | Dónde se ve |
+|---|---|---|
+| `published` | En el portafolio | Galería pública + gestor |
+| `draft` | En preparación | Solo el gestor |
+| `archived` | Fuera del portafolio (pero conservada) | Solo el gestor |
+
+- **Migración** `20260903220045_image_status`: `ADD COLUMN ... DEFAULT 'draft'` + `UPDATE images SET
+  status = 'published'` (todo lo ya subido se queda visible; solo las subidas **nuevas** entran como
+  `draft`).
+- El **default de columna es `draft`** — una subida nueva no aparece en público hasta que se
+  publica. Es el flujo de portafolio ("lanza una red ancha, luego da un paso atrás").
+
+### 13.2 API
+
+| Endpoint | Cambio |
+|---|---|
+| `PATCH /images/:id` | acepta `status` (además de `altText`/`caption`/`sortOrder`). |
+| `POST /albums/:id/images/status` | **nuevo** — `{ imageIds[], status }` cambia el estado en bloque; valida que todos los ids sean del álbum (400 si no); `updateMany` acotado. Es el flujo real cuando se curan 89 fotos. |
+| `GET /albums/:id/images` (gestor) | sin cambio — devuelve **todas** las imágenes, ahora con `status`. |
+| `GET /g/:slug` (público) | filtra `status = 'published'` **siempre** (tenga o no enlace de compartir); `imageCount` = nº de publicadas. |
+| `GET /galleries` | solo lista colecciones `public` con ≥1 publicada; `imageCount` = publicadas; la portada cae a la primera publicada si la portada elegida no lo está. |
+
+- **Resiliencia del lado público**: si la portada del álbum o el `hero_image_id` del sitio apuntan
+  a una imagen que ya no está publicada, el público no ve un hueco — la portada usa la primera
+  publicada y el hero cae a su degradado (`SiteService.toPublic` filtra por `status`). `PATCH /site`
+  también exige que el `heroImageId` sea una foto **publicada** de un álbum público.
+- **Decisión**: un enlace de compartir (`unlisted`/`private`) tampoco muestra borradores. Compartir
+  para "segundas opiniones" con borradores visibles es una mejora futura, no de esta fase.
+
+### 13.3 Gestor (`/studio/[albumId]`)
+
+`ImageGrid` gana:
+- Un `<select>` de estado por imagen (optimista: pinta y confirma).
+- **Selección múltiple** (checkbox por tarjeta) + barra de acciones en bloque
+  (Publicada / Borrador / Archivada / limpiar) → `POST .../images/status`.
+- Recuento en vivo: "16 publicadas · 0 borrador · 73 archivadas".
+- Las tarjetas `draft` van con borde punteado; las `archived`, atenuadas.
+
+### 13.4 Seed
+
+`seed-portfolio.ts`: tras subir **todo** el contenido de cada carpeta, publica una **selección
+repartida** (`spread()`) y archiva el resto. Por colección: Calle 16 · Tinta 14 · Muros 15 ·
+Humo 12 · Ciudad 14 · Cuaderno 10 → **~81 publicadas de 244 subidas**. La portada se fija a una
+foto publicada.
+
+### 13.5 Verificación real
+
+- `PATCH /images/:id {status:'archived'}` → 200; `POST /albums/:id/images/status` con 3 ids → `{ok,updated:3}`;
+  con un id ajeno → **400** (sin escribir).
+- Tras archivar 4 fotos de "Calle": `GET /g/calle` → 85 imágenes (era 89); `GET /galleries` →
+  `calle: 85 publicadas`. Restaurado → 89.
+- Seed curado: `GET /galleries` → 6 colecciones / **81 publicadas** (16/14/15/12/14/10), todas con
+  portada; `GET /g/calle` → 16; el gestor de "Calle" ve **89** (16 `published` + 73 `archived`).
+- `/`, `/trabajo`, `/sobre`, `/g/<slug>`, `/studio/<id>` → 200. `next build` (prod) OK.
+  `tsc` backend OK. **53 tests / 11 suites** (nuevo `images.service.spec.ts`; `site.service.spec.ts`
+  ampliado para el hero publicado).

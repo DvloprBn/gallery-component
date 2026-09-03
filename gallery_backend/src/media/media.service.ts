@@ -45,20 +45,22 @@ export class MediaService {
   ) {}
 
   /**
-   * Lista las colecciones `public` (con imágenes), ordenadas por `sort_order`
-   * y luego por fecha — para el índice del sitio y la portada.
+   * Lista las colecciones `public` que tienen al menos una imagen **publicada**,
+   * ordenadas por `sort_order` y luego por fecha — para el índice del sitio y la
+   * portada. Solo cuenta y muestra imágenes `status = 'published'` (la curación
+   * de la Fase 10b: se sube en ancho y el público ve solo la selección).
    *
    * @param opts.limit - Máximo de colecciones (1–48).
    * @param opts.featuredOnly - Solo las marcadas para la portada.
-   * @returns Cada colección con su slug, título, conteo y la URL de la
-   *          miniatura de portada (si tiene).
+   * @returns Cada colección con su slug, título, conteo de publicadas y la URL
+   *          de la miniatura de portada (si tiene una publicada).
    */
   async listPublic(opts: { limit?: number; featuredOnly?: boolean } = {}) {
     const take = Math.min(Math.max(opts.limit ?? 24, 1), 48);
     const albums = await this.prisma.albums.findMany({
       where: {
         visibility: 'public',
-        image_count: { gt: 0 },
+        images: { some: { status: 'published' } },
         ...(opts.featuredOnly ? { featured: true } : {}),
       },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
@@ -67,13 +69,30 @@ export class MediaService {
 
     return Promise.all(
       albums.map(async (album) => {
-        let coverUrl: string | null = null;
-        const cover = album.cover_image_id
-          ? await this.prisma.images.findUnique({
-              where: { image_id: album.cover_image_id },
+        const publishedCount = await this.prisma.images.count({
+          where: { album_id: album.album_id, status: 'published' },
+        });
+
+        // Portada: la imagen elegida si está publicada; si no (o no hay
+        // elegida), la primera publicada por orden.
+        let cover = album.cover_image_id
+          ? await this.prisma.images.findFirst({
+              where: {
+                image_id: album.cover_image_id,
+                status: 'published',
+              },
               include: { variants: true },
             })
           : null;
+        if (!cover) {
+          cover = await this.prisma.images.findFirst({
+            where: { album_id: album.album_id, status: 'published' },
+            orderBy: { sort_order: 'asc' },
+            include: { variants: true },
+          });
+        }
+
+        let coverUrl: string | null = null;
         if (cover) {
           const small = cover.variants.find((v) => v.label === 'small');
           coverUrl = this.storage.urlFor(
@@ -81,11 +100,12 @@ export class MediaService {
             'public',
           );
         }
+
         return {
           slug: album.slug,
           title: album.title,
           description: album.description,
-          imageCount: album.image_count,
+          imageCount: publishedCount,
           coverUrl,
         };
       }),
@@ -119,8 +139,10 @@ export class MediaService {
       }
     }
 
+    // La galería pública muestra solo la selección publicada — nunca borradores
+    // ni archivadas, tenga o no un enlace de compartir.
     const images = await this.prisma.images.findMany({
-      where: { album_id: album.album_id },
+      where: { album_id: album.album_id, status: 'published' },
       orderBy: { sort_order: 'asc' },
       include: { variants: true },
     });
@@ -133,7 +155,7 @@ export class MediaService {
         layout: album.layout,
         theme: album.theme,
         visibility,
-        imageCount: album.image_count,
+        imageCount: images.length,
       },
       images: images.map((image) => ({
         imageId: image.image_id,

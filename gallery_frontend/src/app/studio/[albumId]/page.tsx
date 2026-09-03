@@ -10,7 +10,14 @@ import {
   AlbumSettingsForm,
   type AlbumFormValues,
 } from '@/components/AlbumSettingsForm';
-import type { AlbumRow, ImageDto, ShareTokenRow } from '@/lib/studio-types';
+import {
+  IMAGE_STATUSES,
+  IMAGE_STATUS_LABEL,
+  type AlbumRow,
+  type ImageDto,
+  type ImageStatus,
+  type ShareTokenRow,
+} from '@/lib/studio-types';
 
 export default function AlbumManagePage() {
   return (
@@ -163,7 +170,13 @@ function Uploader({ albumId, onDone }: { albumId: string; onDone: () => Promise<
   );
 }
 
-/** Rejilla de imágenes: editar alt/pie, portada, borrar, reordenar arrastrando. */
+/**
+ * Rejilla de imágenes: curar (estado de publicación, individual y en bloque),
+ * editar alt/pie, elegir portada, borrar y reordenar arrastrando.
+ *
+ * La curación es el eje de la Fase 10b: se sube en ancho y solo la selección
+ * `published` se ve en la galería pública.
+ */
 function ImageGrid({
   albumId,
   images,
@@ -176,9 +189,19 @@ function ImageGrid({
   onChange: () => Promise<void>;
 }) {
   const [order, setOrder] = useState<ImageDto[]>(images);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
   const dragFrom = useRef<number | null>(null);
 
-  useEffect(() => setOrder(images), [images]);
+  useEffect(() => {
+    setOrder(images);
+    setSelected(new Set());
+  }, [images]);
+
+  const counts = order.reduce(
+    (acc, i) => ({ ...acc, [i.status]: (acc[i.status] ?? 0) + 1 }),
+    {} as Record<ImageStatus, number>,
+  );
 
   const persistOrder = async (next: ImageDto[]) => {
     setOrder(next);
@@ -202,6 +225,35 @@ function ImageGrid({
     await apiFetch(`/images/${id}`, { method: 'PATCH', body: patch });
   };
 
+  const setStatus = async (id: string, status: ImageStatus) => {
+    // Optimista: pinta el cambio y confirma contra el servidor.
+    setOrder((cur) => cur.map((i) => (i.imageId === id ? { ...i, status } : i)));
+    await apiFetch(`/images/${id}`, { method: 'PATCH', body: { status } }).catch(
+      () => onChange(),
+    );
+  };
+
+  const bulkStatus = async (status: ImageStatus) => {
+    if (selected.size === 0) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/albums/${albumId}/images/status`, {
+        method: 'POST',
+        body: { imageIds: [...selected], status },
+      });
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleSel = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   const setCover = async (id: string) => {
     await apiFetch(`/albums/${albumId}`, { method: 'PATCH', body: { coverImageId: id } });
     await onChange();
@@ -218,50 +270,103 @@ function ImageGrid({
   }
 
   return (
-    <ol className="img-grid">
-      {order.map((image, index) => (
-        <li
-          key={image.imageId}
-          className="img-card"
-          draggable
-          onDragStart={() => (dragFrom.current = index)}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => onDrop(index)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={image.urls.thumb ?? image.urls.small} alt={image.altText ?? ''} />
-          <input
-            className="img-meta"
-            placeholder="Texto alternativo"
-            defaultValue={image.altText ?? ''}
-            onBlur={(e) => void updateMeta(image.imageId, { altText: e.target.value })}
-          />
-          <input
-            className="img-meta"
-            placeholder="Pie de foto"
-            defaultValue={image.caption ?? ''}
-            onBlur={(e) => void updateMeta(image.imageId, { caption: e.target.value })}
-          />
-          <div className="img-actions">
+    <div className="stack" style={{ maxWidth: 'none', gap: '1rem' }}>
+      <div className="img-toolbar">
+        <span className="muted">
+          {(['published', 'draft', 'archived'] as ImageStatus[])
+            .map((s) => `${counts[s] ?? 0} ${IMAGE_STATUS_LABEL[s].toLowerCase()}`)
+            .join(' · ')}
+        </span>
+        {selected.size > 0 && (
+          <span className="img-bulk">
+            <strong>{selected.size} seleccionada{selected.size === 1 ? '' : 's'}:</strong>
+            {IMAGE_STATUSES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="link-button"
+                disabled={busy}
+                onClick={() => void bulkStatus(s)}
+              >
+                {IMAGE_STATUS_LABEL[s]}
+              </button>
+            ))}
             <button
               type="button"
               className="link-button"
-              disabled={coverId === image.imageId}
-              onClick={() => void setCover(image.imageId)}
+              onClick={() => setSelected(new Set())}
             >
-              {coverId === image.imageId ? 'Portada' : 'Hacer portada'}
+              limpiar
             </button>
-            <button
-              type="button"
-              className="link-button danger"
-              onClick={() => void remove(image.imageId)}
+          </span>
+        )}
+      </div>
+
+      <ol className="img-grid">
+        {order.map((image, index) => (
+          <li
+            key={image.imageId}
+            className={`img-card img-card--${image.status}${
+              selected.has(image.imageId) ? ' is-selected' : ''
+            }`}
+            draggable
+            onDragStart={() => (dragFrom.current = index)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => onDrop(index)}
+          >
+            <label className="img-select">
+              <input
+                type="checkbox"
+                checked={selected.has(image.imageId)}
+                onChange={() => toggleSel(image.imageId)}
+              />
+            </label>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image.urls.thumb ?? image.urls.small} alt={image.altText ?? ''} />
+            <select
+              className="img-meta"
+              value={image.status}
+              onChange={(e) => void setStatus(image.imageId, e.target.value as ImageStatus)}
             >
-              Borrar
-            </button>
-          </div>
-        </li>
-      ))}
-    </ol>
+              {IMAGE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {IMAGE_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+            <input
+              className="img-meta"
+              placeholder="Texto alternativo"
+              defaultValue={image.altText ?? ''}
+              onBlur={(e) => void updateMeta(image.imageId, { altText: e.target.value })}
+            />
+            <input
+              className="img-meta"
+              placeholder="Pie de foto"
+              defaultValue={image.caption ?? ''}
+              onBlur={(e) => void updateMeta(image.imageId, { caption: e.target.value })}
+            />
+            <div className="img-actions">
+              <button
+                type="button"
+                className="link-button"
+                disabled={coverId === image.imageId}
+                onClick={() => void setCover(image.imageId)}
+              >
+                {coverId === image.imageId ? 'Portada' : 'Hacer portada'}
+              </button>
+              <button
+                type="button"
+                className="link-button danger"
+                onClick={() => void remove(image.imageId)}
+              >
+                Borrar
+              </button>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

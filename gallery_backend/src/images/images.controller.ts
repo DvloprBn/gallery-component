@@ -16,7 +16,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface';
-import { ReorderImagesDto, UpdateImageDto } from './dto/image.dto';
+import {
+  BulkStatusDto,
+  ReorderImagesDto,
+  UpdateImageDto,
+} from './dto/image.dto';
 import { ImagesService, type UploadedImageFile } from './images.service';
 
 /** Límite de tamaño por archivo — se corta en el interceptor, antes de bufferizar todo. */
@@ -64,6 +68,17 @@ export class ImagesController {
     @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.images.reorder(albumId, actor, dto);
+  }
+
+  @Post('albums/:albumId/images/status')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Cambia el estado de curación de varias imágenes' })
+  setStatusBulk(
+    @Param('albumId', ParseUUIDPipe) albumId: string,
+    @Body() dto: BulkStatusDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.images.setStatusBulk(albumId, actor, dto);
   }
 
   @Patch('images/:id')

@@ -118,6 +118,7 @@ F7/F10 con volumen/espera reales.
 | F13 | Path traversal en nombre | `original_name` saneado (`basename` + lista blanca); `storage_key` lo genera el servidor; `DiskStorageDriver.pathFor` revalida el patrón `<uuid>.<ext>` antes de tocar el FS | ✅ Cubierto por diseño |
 | F14 | Ruta de storage adivinable | `storage_key` = `randomUUID()` + extensión canónica; nada derivado del cliente | ✅ Cubierto por diseño |
 | F15 | Cabecera de incrustación | `GET /media/:key` marca `Cross-Origin-Resource-Policy: cross-origin` (helmet pone `same-origin` por defecto, que rompía el `<img>` del frontend en dev — otro puerto). Es contenido público pensado para CDN; el control de los privados sigue siendo la firma HMAC de la URL, no CORP. Las respuestas JSON de la API **conservan** `same-origin`. | ✅ Probado 2026-09-02 |
+| F16 | Fuga de fotos no publicadas (Fase 10b) | Una imagen `draft` / `archived` **nunca** aparece en `GET /g/:slug` ni en `GET /galleries` (ni con enlace de compartir válido); su clave de media no se entrega en ninguna respuesta pública, así que tampoco es alcanzable por `/media/:key` salvo que ya se conociera. El gestor (`GET /albums/:id/images`, autenticado, dueño/admin) sí las ve. `POST /albums/:id/images/status` valida que todos los ids sean del álbum (400 si no). | ✅ Probado 2026-09-03 (archivar 4 fotos → desaparecen de `/g` y del índice; id ajeno → 400) |
 
 ---
 

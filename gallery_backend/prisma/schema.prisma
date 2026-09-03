@@ -173,6 +173,10 @@ model images {
   alt_text        String?  @db.VarChar(500)
   caption         String?  @db.VarChar(2000)
   sort_order      Int      @default(0)
+  // Estado de curación: 'archived' (subida, fuera del portafolio) | 'draft'
+  // (en preparación) | 'published' (visible en la galería pública). Las subidas
+  // nuevas entran como 'draft' — se sube en ancho y se cura después.
+  status          String   @default("draft") @db.VarChar(16)
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
   album    albums          @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
@@ -180,6 +184,7 @@ model images {
   variants image_variants[]
 
   @@index([album_id])
+  @@index([album_id, status])
   @@index([owner_user_id])
 }
 

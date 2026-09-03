@@ -77,8 +77,10 @@ function themeFor(accent: string) {
 
 /**
  * Las seis colecciones y su(s) carpeta(s) de origen (relativas a
- * `IMAGES_ROOT`). `'.'` = los archivos sueltos en la raíz. Se sube **todo** el
- * contenido de cada carpeta, en orden alfabético.
+ * `IMAGES_ROOT`). `'.'` = los archivos sueltos en la raíz. Se **sube todo** el
+ * contenido de cada carpeta (archivo completo), pero solo se **publica** una
+ * selección curada de `published` fotos — el resto queda `archived` (Fase 10b:
+ * "mostrar menos de lo que se tiene").
  */
 const COLLECTIONS: {
   title: string;
@@ -87,6 +89,8 @@ const COLLECTIONS: {
   layout: 'masonry' | 'justified' | 'grid' | 'carousel';
   featured: boolean;
   accent: string;
+  /** Cuántas fotos quedan visibles en la galería pública (el resto se archiva). */
+  published: number;
 }[] = [
   {
     title: 'Calle',
@@ -95,6 +99,7 @@ const COLLECTIONS: {
     layout: 'justified',
     featured: true,
     accent: '#ff5d3a',
+    published: 16,
   },
   {
     title: 'Tinta',
@@ -103,6 +108,7 @@ const COLLECTIONS: {
     layout: 'grid',
     featured: true,
     accent: '#8ab4ff',
+    published: 14,
   },
   {
     title: 'Muros',
@@ -112,6 +118,7 @@ const COLLECTIONS: {
     layout: 'masonry',
     featured: true,
     accent: '#f2c14e',
+    published: 15,
   },
   {
     title: 'Humo',
@@ -120,6 +127,7 @@ const COLLECTIONS: {
     layout: 'carousel',
     featured: true,
     accent: '#c9a2ff',
+    published: 12,
   },
   {
     title: 'Ciudad',
@@ -128,6 +136,7 @@ const COLLECTIONS: {
     layout: 'masonry',
     featured: false,
     accent: '#7fd1c4',
+    published: 14,
   },
   {
     title: 'Cuaderno',
@@ -136,8 +145,17 @@ const COLLECTIONS: {
     layout: 'justified',
     featured: false,
     accent: '#9aa4b2',
+    published: 10,
   },
 ];
+
+/** Elige `n` elementos repartidos por todo el arreglo (no solo los primeros). */
+function spread<T>(arr: T[], n: number): T[] {
+  if (n >= arr.length) return [...arr];
+  if (n <= 0) return [];
+  const step = arr.length / n;
+  return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step)]);
+}
 
 const IMG_RE = /\.(jpe?g|png|webp)$/i;
 
@@ -277,10 +295,33 @@ async function main(): Promise<void> {
     process.stdout.write('\n');
     total += files.length;
 
+    // Curación: publicar una selección repartida, archivar el resto.
     const images = await api.json<ImageRow[]>(`/albums/${album.album_id}/images`);
-    if (images.length > 0) {
+    const publishIds = new Set(
+      spread(images, col.published).map((im) => im.imageId),
+    );
+    const toPublish = images.filter((im) => publishIds.has(im.imageId)).map((im) => im.imageId);
+    const toArchive = images.filter((im) => !publishIds.has(im.imageId)).map((im) => im.imageId);
+    if (toPublish.length > 0) {
+      await api.postJson(`/albums/${album.album_id}/images/status`, {
+        imageIds: toPublish,
+        status: 'published',
+      });
+    }
+    if (toArchive.length > 0) {
+      await api.postJson(`/albums/${album.album_id}/images/status`, {
+        imageIds: toArchive,
+        status: 'archived',
+      });
+    }
+    console.log(
+      `   ${toPublish.length} publicadas · ${toArchive.length} archivadas`,
+    );
+
+    // La portada tiene que ser una foto publicada.
+    if (toPublish.length > 0) {
       await api.patchJson(`/albums/${album.album_id}`, {
-        coverImageId: images[0].imageId,
+        coverImageId: toPublish[0],
       });
     }
     if (col.title === 'Calle') heroAlbumSlug = album.slug;
@@ -307,8 +348,10 @@ async function main(): Promise<void> {
     );
   }
 
+  const totalPublished = COLLECTIONS.reduce((n, c) => n + c.published, 0);
   console.log(
-    `\nListo — ${total} fotos en ${COLLECTIONS.length} colecciones. ` +
+    `\nListo — ${total} fotos subidas en ${COLLECTIONS.length} colecciones, ` +
+      `~${totalPublished} publicadas (el resto archivado). ` +
       `Abre  ${process.env.FRONTEND_URL ?? 'http://localhost:3051'}/`,
   );
 }

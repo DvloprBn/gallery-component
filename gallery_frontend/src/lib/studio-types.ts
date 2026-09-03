@@ -17,6 +17,17 @@ export interface AlbumRow {
   updated_at: string;
 }
 
+/** Estados de curación de una imagen (Fase 10b). */
+export const IMAGE_STATUSES = ['published', 'draft', 'archived'] as const;
+export type ImageStatus = (typeof IMAGE_STATUSES)[number];
+
+/** Etiqueta en español de cada estado, para la interfaz. */
+export const IMAGE_STATUS_LABEL: Record<ImageStatus, string> = {
+  published: 'Publicada',
+  draft: 'Borrador',
+  archived: 'Archivada',
+};
+
 /** Imagen tal como la devuelven `POST /albums/:id/images` y `GET /albums/:id/images`. */
 export interface ImageDto {
   imageId: string;
@@ -30,6 +41,8 @@ export interface ImageDto {
   altText: string | null;
   caption: string | null;
   sortOrder: number;
+  /** Curación: solo las `published` se ven en la galería pública. */
+  status: ImageStatus;
   createdAt: string;
   urls: Record<string, string>;
 }
