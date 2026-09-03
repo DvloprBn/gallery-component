@@ -117,9 +117,17 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-36 tests, 8 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
-pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb) y dos
-suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas).
+50 tests, 10 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), dos
+suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas) y las
+unitarias de `SiteService` / `ContactService` (validación del hero, honeypot, escape del correo).
+
+Pruebas de seguridad replicables de la Fase 10 (RBAC de `/site` y `/contact`, honeypot, XSS
+almacenado, throttle, fuga de IP):
+
+```bash
+node gallery_backend/scripts/probe-fase10.mjs   # 24 checks contra el backend en :3050
+```
 
 ## Producción (galeria.dvloprbn.dev)
 

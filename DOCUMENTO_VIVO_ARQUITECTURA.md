@@ -1075,4 +1075,18 @@ Idempotente **por título**: una colección que ya existe no se recrea. Fija por
 - Frontend: `/`, `/trabajo`, `/sobre`, `/contacto`, `/g/<slug>` → 200; la portada sirve el `<img>`
   del hero y las 4 tarjetas destacadas.
 - `next build` con `NODE_ENV=production` → 15 rutas, TypeScript OK. `tsc -p tsconfig.json --noEmit`
-  (backend) OK. **36/36 tests** OK.
+  (backend) OK.
+
+### 11.6 Pruebas de seguridad de `/site` y `/contact`
+
+`scripts/probe-fase10.mjs` — **24 comprobaciones** contra el backend en vivo (restaura
+`site_settings` y borra los datos de prueba al terminar). Cubre: proyección pública de `/site` sin
+columnas internas; RBAC de `PATCH /site` y `/contact/messages` (401 / 403 / 200); validación del
+`heroImageId` (inexistente → 400, álbum no público → 400, `null` limpia); honeypot de `/contact`
+(202 sin fila); XSS almacenado escapado en el correo; `message` > 4000 → 400; whitelist de campos;
+`@Throttle(5/min)` → 429; `MessageView` sin `ip_address`; `?featured=true` no filtra colecciones no
+públicas. Todo detallado como bloque **S1–S13** en `PRUEBAS_SEGURIDAD.md`.
+
+Specs `jest` nuevas: `src/site/site.service.spec.ts` (7) y `src/contact/contact.service.spec.ts`
+(7) — unitarias con Prisma/Mail falsos, para no tocar el singleton `site_settings` real del entorno
+de desarrollo. **Total: 50 tests / 10 suites**, `tsc` limpio.
