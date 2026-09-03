@@ -200,10 +200,19 @@ Lo anterior:
 
 ## 4. Próximo paso
 
-Las fases planificadas (`PLAN_DESARROLLO.md` §10) están **todas completas**: 1 infra · 2 identidad ·
-3 media · 4 galería pública · 5 Studio · 6 animación (resuelta con CSS en la Fase 4) · 7 seguridad
-transversal (`PRUEBAS_SEGURIDAD.md`) · 8 docs · 9 despliegue (artefactos) · 10 reencuadre como
-portafolio de fotografía.
+Las fases 1–10 están **completas**: 1 infra · 2 identidad · 3 media · 4 galería pública · 5 Studio ·
+6 animación (CSS) · 7 seguridad transversal · 8 docs · 9 despliegue (artefactos) · 10 reencuadre
+como portafolio.
+
+**Reencuadre de alcance (2026-09-02).** El dueño amplió el objetivo: el sitio debe demostrar el
+**kit real para que un fotógrafo publique, proteja y venda su obra** (no una galería más). Nuevas
+fases planificadas en `PLAN_DESARROLLO.md` §10 — **10b Curación** (estado de publicación por imagen
++ selección curada), **11 Protección** (marca de agua en el pipeline, original de alta resolución
+fuera del servido público, metadatos IPTC/XMP de derechos, disuasores + aviso de copyright),
+**12 Licenciamiento** (solicitud → cotización → entrega del archivo limpio por URL firmada de un
+solo uso), **13 Pago** (opcional, Stripe test-mode tras flag). **Bloqueadas por 5 decisiones
+abiertas D9–D13** (`PLAN_DESARROLLO.md` §4) que el dueño debe cerrar antes de arrancar la Fase 11 —
+resumen y recomendaciones en ese documento.
 
 **Repositorio remoto: hecho (2026-09-02).** El código está en `github.com/DvloprBn/gallery-component`
 (rama `main`, historial completo). El `origin` local usa **SSH** (`git@github.com:DvloprBn/gallery-component.git`),
@@ -219,6 +228,8 @@ Lo que queda, cuando el dueño quiera:
 2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
 3. Opcional: prev/next entre colecciones en `/g/[slug]`; probar `STORAGE_DRIVER=cloudinary` contra
    la cuenta real; sustituir la "Selección de encargos" fija de `/sobre` por contenido editable.
+4. **Cerrar D9–D13** para desbloquear las fases 10b–13 (protección + licenciamiento). Es lo que
+   convierte esto de "portafolio bonito" en "portafolio que un fotógrafo usaría para vender".
 
 ---
 
@@ -226,6 +237,7 @@ Lo que queda, cuando el dueño quiera:
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-02 | **Reencuadre de alcance: portafolio que protege y vende.** El dueño, tras investigar cómo se arma un portafolio de fotografía que sirva de verdad, amplió el objetivo: el sitio debe demostrar el **kit real para publicar, proteger y vender** obra — marca de agua, derechos embebidos, el archivo bueno tras un muro, y un flujo de licenciamiento — no una galería más "que hoy nadie va a ver". Datos ficticios, funcionalidad real. Analizada la investigación del dueño (7 principios de portafolio + guía tipo VSCO): **adoptados** "mostrar menos de lo que se tiene" (→ estado de publicación por imagen + selección curada), "contacto en un clic desde cualquier lugar", "agrupar por tipo no por cliente", "un scroll por especialidad"; **ya cubiertos** "abrir con imagen no con menú", "poseer el dominio" (D8), "segundas opiniones" (enlaces de compartir); **opcional** separar comercial/editorial (campo `category`); **descartado como software** el resto (proceso del fotógrafo, no del sitio). `PLAN_DESARROLLO.md` reescrito: §1 (marco), §2 (capas nuevas de **protección** y **licenciamiento**), §4 (decisiones abiertas **D9–D13**), §10 (fases **10b Curación**, **11 Protección**, **12 Licenciamiento**, **13 Pago opcional**). Sin código: modo diseño, y las fases 11+ están bloqueadas hasta cerrar D9–D13. Recomendaciones del arquitecto para cada decisión en §4. |
 | 2026-09-02 | **Fix: las imágenes no cargaban en el navegador (CORP).** `helmet()` pone `Cross-Origin-Resource-Policy: same-origin` en toda respuesta; en desarrollo el frontend (`:3051`) y la entrega de media (`:3050`) son orígenes distintos, así que el navegador se negaba a pintar cada `<img>` (con `curl` no se veía — CORP no se aplica ahí; salían 200). `GET /media/:key` pasa a marcar `Cross-Origin-Resource-Policy: cross-origin` — es contenido público pensado para CDN, y el control de los privados es la firma HMAC de la URL, no CORP. Las respuestas **JSON** de la API conservan `same-origin`. Verificado: `/media/:key` → `cross-origin`, `/galleries` y `/site` → `same-origin`; `tsc` + 50 tests OK. Ficha F15 en `PRUEBAS_SEGURIDAD.md`. |
 | 2026-09-02 | **Fase 10 — seed completo + límite de subida configurable.** `seed-portfolio.ts` pasa a consumir **todo** el contenido de `projects/espiral/images/uso_libre` (244 fotos) en **6 colecciones**: Calle←`Skate/` (89), Tinta←`tatoos/` (37), Muros←`grafitti/` (38), Humo←`smoke/` (25), Ciudad←`Qro/`+`varias/`+`espirales/` (34) y **Cuaderno** nueva ←`*.jpg` sueltos de la raíz (21). Ahora es **convergente**: borra y rehace cada colección del portafolio en cada corrida (suelta antes el `hero_image_id` para no bloquear el borrado de "Calle"). `ImagesService.MAX_UPLOADS_PER_HOUR` se lee de **`UPLOAD_MAX_UPLOADS_PER_HOUR`** (default 120; `.env` de dev → 5000 para sembrar de un tirón, `.env.prod.example` → 120) — sin esto el seed se corta con 429 al pasar de 120 subidas/hora. **Verificado**: `GET /galleries` → 6 colecciones / 244 fotos, todas con portada; `?featured=true` → 4; volumen `gallery_storage` 1260 objetos ≈235 MB; `/` y `/trabajo` → 200 con las 6 tarjetas; `tsc` + 50 tests OK. `.env.example`/`.env.prod.example` documentan la variable. |
 | 2026-09-02 | **Primer push al repositorio remoto de GitHub (`github.com/DvloprBn/gallery-component`).** El repo remoto lo creó el dueño vacío (sin README/licencia). El repo **local ya estaba completo** — `git init` hecho desde la Fase 1, rama `main`, 8 commits reales, `origin` ya configurado y árbol de trabajo limpio — así que **NO** se corrió `git init` / `git add` / `git commit -m "first commit"` (esas instrucciones de la página de GitHub son para una carpeta vacía; aquí habrían creado un commit basura o fallado). Lo único que faltaba era el `push`. **Cambio necesario:** `origin` apuntaba a la URL **HTTPS** (`https://github.com/DvloprBn/gallery-component.git`), pero esta máquina solo tiene autenticación **SSH** con GitHub (llave `~/.ssh/id_ed25519_github` sin passphrase, mapeada en `~/.ssh/config` con `IdentitiesOnly yes`; no hay credential helper ni token para HTTPS) — un `push` por HTTPS habría pedido usuario/contraseña y fallado. Se resolvió con `git remote set-url origin git@github.com:DvloprBn/gallery-component.git` (mismo patrón que el resto de repos del dueño: `delyDoggy`, `dvlopr-bn`, `login`). Luego `git push -u origin main` → subió los **8 commits / 161 archivos / historial completo** (`.git` ≈ 3.7 MB); `main` quedó trackeando `origin/main`. **Verificación de seguridad previa al push** (el push publica TODO el historial, no solo HEAD): barrido de los 161 archivos versionados y de cada commit del historial — **0 secretos reales** (sin `sk_live_`/`sk_test_`/llaves AWS/`ghp_`/llaves privadas), **ningún `.env` real versionado** (solo `.env.example` y `.env.prod.example`, que son plantillas), y sin `node_modules/`/`dist/`/`.next/` colados. La identidad de los commits es `dvloprbn <dvloprbn@gmail.com>` tomada de `~/.gitconfig` global del dueño — no se configuró nada nuevo de git. **Sigue pendiente** (no lo hace un push): rotar las llaves de Cloudinary/Resend antes de que el repo sea de acceso amplio, ya que comparten cuenta con `projects/dvlopr-bn` (ver §4 punto 1). |

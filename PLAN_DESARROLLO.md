@@ -36,19 +36,41 @@ Consecuencia en el estándar de calidad:
 ## §1. Qué es este proyecto
 
 Una **galería de imágenes** con personalización y animaciones de grado profesional, presentada como
-el **portafolio de un fotógrafo** (reencuadre de la Fase 10 — antes era una galería genérica; el
-motor no cambió, sí el marco). Cuatro superficies:
+el **portafolio real de un fotógrafo**. Reencuadre en dos pasos: Fase 10 la convirtió de galería
+genérica en portafolio; a partir de aquí demuestra el **kit completo que un fotógrafo necesita para
+publicar, proteger y vender su obra** — sin regalarla ni depender de plataformas de terceros. Los
+datos son ficticios (es una demo), pero **cada función es real y funcional**, sin atajos simulados.
+
+Cuatro superficies:
 
 | Superficie | Para quién | Qué hace |
 |---|---|---|
-| **Sitio público** | Cualquier visitante | Portada editorial con hero, `/trabajo` (colecciones), `/sobre`, `/contacto`; la identidad la fija `site_settings` |
-| **Galería pública** | Cualquier visitante | Ver una colección publicada: layout elegido por el dueño, animaciones, lightbox, imágenes responsivas y perezosas |
-| **Gestor del sitio** | Dueño (usuario autenticado) | Crear colecciones, subir y reordenar imágenes, elegir layout/tema/visibilidad, marcar "destacada"; ajustes de identidad y bandeja de contacto (roles `admin`+) |
+| **Sitio público** | Cualquier visitante | Portada editorial con hero, `/trabajo` (colecciones), `/sobre`, contacto en un clic desde cualquier lugar; la identidad la fija `site_settings` |
+| **Galería pública** | Cualquier visitante | Ver una **selección curada** de una colección: layout elegido por el dueño, animaciones, lightbox, imágenes responsivas y perezosas — **siempre con marca de agua**, nunca el original de alta resolución |
+| **Gestor del sitio** | Dueño (usuario autenticado) | Crear colecciones, subir a un archivo y **curar** la selección visible, reordenar, elegir layout/tema/visibilidad, marcar "destacada", configurar marca de agua; bandeja de **contacto y de solicitudes de licencia**; ajustes de identidad (roles `admin`+) |
 | **Panel de administración** | Roles administrativos | Gestión de usuarios y de roles dinámicos, respetando la jerarquía de autoridad |
 
-No es una tienda: no hay catálogo, carrito ni pagos. Es exclusivamente **gestión y presentación
-de imágenes** + la capa de identidad y acceso que la protege. La sección pública de acceso
-(entrar / crear cuenta) se mantiene visible: es parte de la demostración.
+**Qué es y qué no es.** No es una plataforma de stock ni una red social de fotos. Es el sitio
+**propio** de un autor: presenta su trabajo, **protege** los archivos (marca de agua, derechos
+embebidos, el original bueno tras un muro) y permite **licenciarlos** (solicitud → cotización →
+entrega firmada de un solo uso). El cobro dentro del sitio es **opcional y posterior** (§4 D12). La
+sección pública de acceso (entrar / crear cuenta) se mantiene visible: es parte de la demostración.
+
+### Principios de portafolio (adoptados de la investigación del dueño, 2026-09-02)
+
+| Principio | Estado en el proyecto |
+|---|---|
+| **Mostrar menos de lo que se tiene** — la imagen más débil fija el estándar | Estados de publicación por imagen (`archivada` / `borrador` / `publicada`) + **selección curada** por colección; el archivo completo no se lista. (Fase 5 ampliada + Fase 11.) |
+| **Abrir con una imagen, no con un menú** | ✅ Hecho — hero a sangre completa (Fase 10). |
+| **Contacto en un clic desde cualquier lugar** | Afordancia de contacto persistente (no solo enlace en el menú) + contacto/solicitud desde dentro de la galería. (Fase 10 pulido + Fase 12.) |
+| **Poseer el dominio** | ✅ Decidido (D8) — la demo vive en `galeria.dvloprbn.dev`; un despliegue real para un autor usaría su dominio raíz. |
+| **Agrupar por tipo, no por cliente** | ✅ Alineado — las colecciones son por género/tema, nunca "Cliente X". Principio explícito. |
+| **Separar comercial de editorial** | Opcional — campo `category` en `albums` (§4 D13); IA plana mientras haya una sola audiencia. |
+| **Un scroll por especialidad; galerías aparte al pasar de dos** | ✅ `/trabajo` (índice) + `/g/[slug]`; sin anidamiento, el visitante nunca adivina en qué galería está. |
+
+Lo demás de esa investigación (encontrar la voz, definir audiencia, secuenciar, iterar) es
+**proceso del fotógrafo**, no funcionalidad del sitio; se apoya con lo que ya existe (reordenado por
+arrastre, enlaces de compartir para segundas opiniones, edición fácil desde el gestor).
 
 ---
 
@@ -86,9 +108,49 @@ de imágenes** + la capa de identidad y acceso que la protege. La sección públ
 ### Capa de galería y personalización
 - Modelo `albums` / `images` / `image_variants` (ver schema en `DOCUMENTO_VIVO_ARQUITECTURA.md`).
 - Visibilidad por álbum: `public` / `unlisted` (por enlace) / `private`.
+- **Estado de publicación por imagen**: `archivada` (subida pero fuera del portafolio) / `borrador`
+  / `publicada`. La galería pública muestra solo `publicada`; el gestor ve todo. Sostiene el
+  principio "mostrar menos de lo que se tiene".
 - Layout por álbum: `masonry` / `justified` / `grid` / `carousel`.
 - Tema por álbum: objeto de tokens de diseño (colores, tipografía, espaciado, radios) — editable
   en el Studio, **expuesto completo al crear el álbum, no "crear y luego editar"**.
+- (Opcional, §4 D13) `category` por álbum: `editorial` / `comercial` / `personal` — para agrupar
+  `/trabajo` cuando haya dos audiencias que se autoseleccionan.
+
+### Capa de protección de la obra — *el fotógrafo deja de regalar sus fotos*
+- **Marca de agua** aplicada por el pipeline a **todos** los derivados públicos (thumb → large).
+  Configurable (§4 D9): texto por defecto de `site_settings` o PNG de logo subido; patrón diagonal
+  repetido tenue u opción de esquina. El **original de resolución completa nunca se sirve en
+  público** — solo derivados marcados; el archivo limpio vive tras el muro de licenciamiento y solo
+  sale por URL firmada de un solo uso.
+- **Metadatos de derechos embebidos** (§4 D10): se revisa la regla actual "tirar todo el EXIF" →
+  seguir eliminando GPS / número de serie / datos personales, pero **incrustar IPTC/XMP**
+  (`© / creator / credit / rights / licensor URL`) en cada archivo servido. Derechos legibles por
+  máquina; es señal legal, **no** DRM.
+- **Disuasores de copia** en el frontend: bloquear arrastre y menú contextual sobre las imágenes,
+  capa transparente sobre la figura. Documentado con honestidad: son **disuasores**, no control de
+  acceso — el control real es que el archivo bueno no se sirve.
+- **Aviso de copyright** visible: en el pie del sitio y junto a cada foto en el lightbox
+  (texto de `site_settings`).
+- Fuera de alcance por ahora: marca de agua **forense/invisible** (esteganográfica) para rastrear
+  filtraciones — se menciona como evolución posible, no se construye.
+
+### Capa de licenciamiento y entrega — *el fotógrafo puede vender*
+- Modelo `license_requests` / `licenses` / `delivery_tokens`.
+- Flujo público: desde una foto → elegir **uso** (`editorial` / `comercial` / `social` /
+  `impresión`) y alcance → **solicitud** (nombre, correo, descripción del uso, presupuesto) →
+  llega a la bandeja del gestor (misma bandeja que contacto, otro tipo).
+- Flujo del gestor: revisar la solicitud → **cotizar** (precio + condiciones + vigencia) → al
+  aceptar el cliente, se emite una `license` y un `delivery_token`: **URL firmada de un solo uso y
+  con caducidad** que entrega el **archivo original limpio** (sin marca de agua, con los metadatos
+  de derechos y de licenciatario embebidos).
+- Registro consultable de licencias emitidas (qué foto, a quién, qué uso, vigencia) — sirve de
+  prueba y de historial.
+- **Sin rail de pago en el sitio en la primera versión** (§4 D12): la transacción es
+  solicitud → cotización → entrega; el pago se acuerda fuera. Stripe en **modo test tras un feature
+  flag** queda como Fase 13, solo si se decide cobrar dentro.
+- **Venta de impresiones**: fuera de la primera versión (§4 D11) — es otro producto (inventario,
+  envío); se evalúa después de la licencia digital.
 
 ### Capa de animación
 - Librería a confirmar (§4, decisión D4). Presupuesto de rendimiento definido antes de construir.
@@ -146,6 +208,20 @@ Mismo stack en todas las capas, sin variarlo sin confirmarlo:
 - Login "estilo Google" en pasos separados desde el arranque (solo la UX; OAuth real sería una
   fase posterior aparte, solo si se pide).
 - Repositorio git propio desde el primer commit.
+
+### Decisiones abiertas — reencuadre a "portafolio que protege y vende" (2026-09-02)
+
+> El dueño reencuadró el proyecto: no una galería más, sino la demo del kit real para **publicar,
+> proteger y vender** obra fotográfica. Estas cinco decisiones deben cerrarse antes de arrancar la
+> Fase 11. La columna "recomendación" es la propuesta del arquitecto; el dueño confirma o corrige.
+
+| # | Decisión | Opciones | Recomendación |
+|---|---|---|---|
+| **D9** | **Marca de agua** — ¿obligatoria en todo lo público o configurable por colección? ¿Forma (diagonal repetida / esquina / logo)? ¿Origen (texto de `site_settings` / PNG subido)? | (a) siempre, fija · (b) siempre, configurable · (c) opcional por colección | **(b)** obligatoria en público, configurable: texto de `site_settings` por defecto + opción de PNG de logo; patrón diagonal repetido tenue, con opción de esquina. Nunca desactivable para `public` (sí para entrega bajo licencia). |
+| **D10** | **Metadatos** — la regla actual del pipeline es "tirar TODO el EXIF". ¿Se cambia a "tirar identificativo/ubicación, **embeber** derechos (IPTC/XMP)"? | (a) mantener: tirar todo · (b) tirar GPS/serie/personal, embeber `© / autor / crédito / licencia` | **(b)**. Práctica correcta de la industria; no reintroduce riesgo (GPS y serie siguen fuera). Actualizar `PRUEBAS_SEGURIDAD.md` F11. |
+| **D11** | **Alcance de venta** — ¿solo licencia **digital** o también **impresiones**? ¿editorial + comercial o un solo tipo de uso? | (a) solo licencia digital · (b) digital + impresiones | **(a)** en la primera versión: licencia digital, con tipos de uso `editorial` / `comercial` / `social` / `impresión` (este último como "licencia para imprimir", sin inventario). Venta de impresiones físicas: fase posterior. |
+| **D12** | **Rail de pago en el sitio** | (a) sin pago: solicitud → cotización → entrega, pago fuera · (b) enlace de pago externo (Stripe Payment Link / PayPal.me) · (c) checkout Stripe en **modo test** tras un feature flag | **(a)** para la primera versión (Fases 11–12). **(c)** como **Fase 13 opcional**, siempre en modo test mientras el repo sea público y la seguridad sea prioridad #1. Nunca claves `live` en el repo. |
+| **D13** | **Separación comercial / editorial** en la IA (campo `category` en `albums` + `/trabajo` agrupado) | (a) no, IA plana · (b) campo `category` opcional, agrupar solo si hay >1 categoría en uso | **(b)** — añadir el campo al schema (barato), pero la IA sigue plana mientras la persona demo (documental) tenga una sola audiencia. Se activa sin migración el día que haga falta. |
 
 ---
 
@@ -241,4 +317,8 @@ hay nada que probar) y se llena en paralelo a cada pieza que se construya.
 | **7. Seguridad transversal** | `PRUEBAS_SEGURIDAD.md` completo contra cada endpoint, tests `jest` reales | fases 2–6 |
 | **8. Docs autogenerada** | `docs/` (MkDocs+Swagger) + Compodoc en `docker-compose.yml` | fase 2+ |
 | **9. Despliegue** | `docker-compose.prod.yml` + reverse proxy (Caddy) para `galeria.dvloprbn.dev` con la API bajo `/api/*`; Dockerfiles de producción multi-etapa; `.env` de producción (`STORAGE_DRIVER=cloudinary`, `NODE_ENV=production`, sin puertos de datos publicados); enlace desde el portafolio | D8, fases 1–7 |
-| **10. Reencuadre como portafolio** | `site_settings` + `contact_messages` + `albums.featured`; endpoints `/site` y `/contact`; sitio público editorial (portada con hero, `/trabajo`, `/sobre`, `/contacto`); gestor con ajustes de identidad y bandeja; `scripts/seed-portfolio.ts` (persona "Mara Solís" + 5 colecciones) | fases 1–5 |
+| **10. Reencuadre como portafolio** | `site_settings` + `contact_messages` + `albums.featured`; endpoints `/site` y `/contact`; sitio público editorial (portada con hero, `/trabajo`, `/sobre`, `/contacto`); gestor con ajustes de identidad y bandeja; `scripts/seed-portfolio.ts` (persona "Mara Solís" + 6 colecciones) | fases 1–5 |
+| **10b. Curación** *(amplía la 5)* | Estado de publicación por imagen (`archivada` / `borrador` / `publicada`); vista contact-sheet en el gestor; la galería pública muestra solo la **selección publicada**; el seed pasa a curar (12–20 por colección, el resto archivado) | fase 10, D9 |
+| **11. Protección de la obra** | Marca de agua en el pipeline para **todos** los derivados públicos (config. por `site_settings` / PNG de logo); original de alta resolución **fuera** del servido público; metadatos IPTC/XMP de derechos embebidos (revisa la regla "tirar todo EXIF"); disuasores de copia + aviso de copyright en el frontend | D9, D10, fases 3 y 10 |
+| **12. Licenciamiento y entrega** | Modelo `license_requests` / `licenses` / `delivery_tokens`; flujo público solicitud de licencia por foto (uso + alcance); flujo del gestor cotizar → emitir licencia → **entrega del archivo limpio por URL firmada de un solo uso y caducidad**; registro de licencias; la bandeja del gestor unifica contacto + solicitudes | D11, fases 10b y 11 |
+| **13. Pago en el sitio** *(opcional)* | Solo si D12 = (c): checkout Stripe en **modo test** tras un feature flag; webhooks; nunca claves `live` en el repo | D12, fase 12 |
