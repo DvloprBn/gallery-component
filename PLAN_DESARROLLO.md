@@ -170,8 +170,9 @@ Sin negocio real detrás → se inventan datos libremente: usuarios ficticios, r
 - `prisma/seed.ts` (automático al arrancar el contenedor) — roles del catálogo + una cuenta por
   rol, contraseña `TestOnly123!`.
 - `scripts/seed-portfolio.ts` (manual, **desde el host**) — persona ficticia "Mara Solís" y
-  5 colecciones públicas con fotos de uso libre subidas por el pipeline real. Idempotente por
-  título. Es lo que da al sitio su aspecto de portafolio poblado.
+  6 colecciones públicas (244 fotos = **todo** el contenido de la carpeta de origen) subidas por el
+  pipeline real. Convergente (borra y rehace cada colección). Es lo que da al sitio su aspecto de
+  portafolio poblado. Requiere `UPLOAD_MAX_UPLOADS_PER_HOUR` alto en dev.
 
 ---
 

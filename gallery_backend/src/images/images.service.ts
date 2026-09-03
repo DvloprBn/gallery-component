@@ -25,8 +25,15 @@ export interface UploadedImageFile {
   size: number;
 }
 
-/** Subidas por usuario y hora antes de responder 429. */
-const MAX_UPLOADS_PER_HOUR = 120;
+/**
+ * Subidas por usuario y hora antes de responder 429. Configurable con
+ * `UPLOAD_MAX_UPLOADS_PER_HOUR` (por defecto 120) — se sube en desarrollo para
+ * poder sembrar la demo, se deja bajo en producción.
+ */
+const MAX_UPLOADS_PER_HOUR = Math.max(
+  1,
+  Number(process.env.UPLOAD_MAX_UPLOADS_PER_HOUR) || 120,
+);
 
 /**
  * Subida de imágenes (pipeline de seguridad + almacenamiento + persistencia),

@@ -1050,25 +1050,35 @@ por `sort_order` → `created_at`; `GET /galleries?featured=true` lo expone.
 
 Se corre **desde el host** (`npx ts-node gallery_backend/scripts/seed-portfolio.ts`) porque necesita
 leer la carpeta de fotos y llegar al backend publicado en `:3050`. Persona ficticia **"Mara Solís"**
-(fotógrafa documental, Querétaro). Cinco colecciones públicas con fotos de uso libre subidas por el
-**pipeline real** (cada archivo se reduce a ≤ 2400 px con `sharp` antes de subir, para no pasar el
-tope de `UPLOAD_MAX_FILE_BYTES`):
+(fotógrafa documental, Querétaro). **Seis** colecciones públicas que consumen **todo** el contenido
+de la carpeta de origen (244 fotos de uso libre), subidas por el **pipeline real** (cada archivo se
+reduce a ≤ 2400 px con `sharp` antes de subir, para no pasar el tope de `UPLOAD_MAX_FILE_BYTES`):
 
-| Colección | Layout | Destacada | Fotos |
-|---|---|---|---|
-| Calle | justified | sí | 14 |
-| Tinta | grid | sí | 14 |
-| Muros | masonry | sí | 14 |
-| Humo | carousel | sí | 14 |
-| Ciudad | masonry | no | 16 |
+| Colección | Carpeta(s) de origen | Layout | Destacada | Fotos |
+|---|---|---|---|---|
+| Calle | `Skate/` | justified | sí | 89 |
+| Tinta | `tatoos/` | grid | sí | 37 |
+| Muros | `grafitti/` | masonry | sí | 38 |
+| Humo | `smoke/` | carousel | sí | 25 |
+| Ciudad | `Qro/` + `varias/` + `espirales/` | masonry | no | 34 |
+| Cuaderno | raíz (`*.jpg` sueltos) | justified | no | 21 |
 
-Idempotente **por título**: una colección que ya existe no se recrea. Fija portada (primera foto) y
-`hero_image_id` (una foto de "Calle") solo si están vacíos. `PATCH /site` se aplica siempre.
+**Convergente, no incremental**: si una colección del portafolio ya existe, se **borra y se vuelve a
+crear** con el contenido completo de su carpeta — así una segunda corrida siempre deja el set
+entero, sin huecos ni duplicados (antes de borrar "Calle" se suelta el `hero_image_id` para que la
+referencia no bloquee el borrado). Fija portada (primera foto) y `hero_image_id` (3ª foto de
+"Calle"). `PATCH /site` se aplica siempre.
+
+> **Límite de subida**: `ImagesService` topa las subidas por usuario/hora (`MAX_UPLOADS_PER_HOUR`),
+> ahora leído de `UPLOAD_MAX_UPLOADS_PER_HOUR` (por defecto **120**; el `.env` de desarrollo lo
+> sube a 5000 para poder sembrar las 244 de un tirón, `.env.prod.example` lo deja en 120). Sin esto
+> el seed se corta con 429 a mitad.
 
 ### 11.5 Verificación real
 
 - `GET /site` tras el seed → persona completa + `hero` con las 5 URLs de derivados resueltas.
-- `GET /galleries` → 5 colecciones (todas con portada); `?featured=true` → 4.
+- `GET /galleries` → **6 colecciones / 244 fotos** (todas con portada); `?featured=true` → 4.
+  Volumen `gallery_storage`: 1260 objetos (244 originales × 5 derivados + hero), ≈235 MB.
 - `POST /contact` con `website` vacío → 202 + fila en `contact_messages`; con `website` relleno →
   202 y **nada** en la tabla (honeypot). `GET /contact/messages` como `super` → la bandeja.
 - `PATCH /site { heroImageId: <foto de álbum privado> }` → 400 (debe ser de un álbum público).

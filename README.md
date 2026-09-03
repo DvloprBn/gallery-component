@@ -92,16 +92,18 @@ documentación (`http://localhost:8098`) y en Compodoc (`http://localhost:8099`)
 
 ## Ver la demo
 
-El portafolio poblado ("Mara Solís" + 5 colecciones con fotos de uso libre) se siembra **desde el
-host** (necesita la carpeta de fotos y el backend publicado en `:3050`):
+El portafolio poblado ("Mara Solís" + **6 colecciones / 244 fotos** de uso libre) se siembra
+**desde el host** (necesita la carpeta de fotos y el backend publicado en `:3050`):
 
 ```bash
 npx ts-node gallery_backend/scripts/seed-portfolio.ts
 ```
 
-Es idempotente por título. Variables opcionales: `SEED_PORTFOLIO_API` (por defecto
-`http://localhost:3050`), `SEED_PORTFOLIO_IMAGES` (carpeta raíz de fotos). Luego abre
-http://localhost:3051.
+Consume **todo** el contenido de la carpeta de origen (una carpeta por colección + los archivos
+sueltos de la raíz → "Cuaderno"). Es **convergente**: borra y rehace cada colección en cada
+corrida. Necesita `UPLOAD_MAX_UPLOADS_PER_HOUR` alto (el `.env` de dev ya lo trae en 5000; en
+producción se deja 120). Variables opcionales: `SEED_PORTFOLIO_API` (`http://localhost:3050`),
+`SEED_PORTFOLIO_IMAGES` (carpeta raíz de fotos). Luego abre http://localhost:3051.
 
 > `scripts/seed-demo.ts` (dentro del contenedor) sigue disponible para una única galería de
 > degradados generados con `sharp`, sin archivos externos.

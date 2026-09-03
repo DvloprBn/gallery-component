@@ -109,7 +109,7 @@ F7/F10 con volumen/espera reales.
 | F4 | SVG con `<script>` | `<svg><script>` renombrado → formato `svg` no está en la lista blanca → **400** | ✅ Probado 2026-09-01 |
 | F5 | Decompression bomb | PNG 9000×9000 (81 MP, 253 KB) → **400** por `limitInputPixels` (tope `UPLOAD_MAX_IMAGE_PIXELS`) | ✅ Probado 2026-09-01 |
 | F6 | DoS por tamaño | Archivo de 20 MB (tope 15 MiB) → **413** cortado en el `FileInterceptor` | ✅ Probado 2026-09-01 |
-| F7 | DoS por volumen | Rate limit dedicado (120 subidas/hora por usuario, contador en Redis) → 429 | ⬜ Implementado, falta prueba en runtime |
+| F7 | DoS por volumen | Rate limit dedicado por usuario (contador en Redis, TTL 1 h) → 429; tope = `UPLOAD_MAX_UPLOADS_PER_HOUR` (default **120**, dev lo sube para sembrar) | ✅ Probado 2026-09-02 — el seed de 244 fotos se cortó con 429 al pasar de 120; subir el tope lo resolvió |
 | F8 | IDOR de imagen privada | Otro usuario: `GET /albums/:id` → 404, `GET /albums/:id/images` → 404, `DELETE /images/:id` → 403; `/media/:key` de un privado sin firma → 404 | ✅ Probado 2026-09-01 |
 | F9 | URL firmada manipulada | `exp`+`sig` inventados → **404**; firma HMAC válida no expirada → 200 | ✅ Probado 2026-09-01 |
 | F10 | URL firmada expirada | `verifyMediaSignature` rechaza si `exp*1000 < now` (TTL por defecto 300 s) | ⬜ Implementado, falta prueba con espera real |
