@@ -117,6 +117,7 @@ F7/F10 con volumen/espera reales.
 | F12 | Enumeración de álbumes | `GET /g/:slug` de un privado sin token → **404** (indistinguible de inexistente); `getOwned` devuelve 404, no 403 | ✅ Probado 2026-09-01 |
 | F13 | Path traversal en nombre | `original_name` saneado (`basename` + lista blanca); `storage_key` lo genera el servidor; `DiskStorageDriver.pathFor` revalida el patrón `<uuid>.<ext>` antes de tocar el FS | ✅ Cubierto por diseño |
 | F14 | Ruta de storage adivinable | `storage_key` = `randomUUID()` + extensión canónica; nada derivado del cliente | ✅ Cubierto por diseño |
+| F15 | Cabecera de incrustación | `GET /media/:key` marca `Cross-Origin-Resource-Policy: cross-origin` (helmet pone `same-origin` por defecto, que rompía el `<img>` del frontend en dev — otro puerto). Es contenido público pensado para CDN; el control de los privados sigue siendo la firma HMAC de la URL, no CORP. Las respuestas JSON de la API **conservan** `same-origin`. | ✅ Probado 2026-09-02 |
 
 ---
 

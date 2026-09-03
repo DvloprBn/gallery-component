@@ -51,6 +51,12 @@ export class MediaController {
     res.setHeader('Cache-Control', object.cacheControl);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', 'inline');
+    // Estas imágenes están hechas para incrustarse desde el frontend (que en
+    // desarrollo es otro origen: :3051 vs :3050) y desde un CDN. El
+    // `Cross-Origin-Resource-Policy: same-origin` que pone helmet por defecto
+    // lo impediría; el control de acceso de los privados es la firma HMAC de
+    // la URL, no esta cabecera.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     object.stream.pipe(res);
   }
 }
