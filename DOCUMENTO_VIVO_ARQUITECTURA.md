@@ -1100,3 +1100,123 @@ públicas. Todo detallado como bloque **S1–S13** en `PRUEBAS_SEGURIDAD.md`.
 Specs `jest` nuevas: `src/site/site.service.spec.ts` (7) y `src/contact/contact.service.spec.ts`
 (7) — unitarias con Prisma/Mail falsos, para no tocar el singleton `site_settings` real del entorno
 de desarrollo. **Total: 50 tests / 10 suites**, `tsc` limpio.
+
+## 12. Estrategia — portafolio que protege y vende (diseño, sin construir — 2026-09-02)
+
+> **Estado**: solo diseño. Ninguna de estas piezas está construida todavía. Este apartado registra
+> *qué* se va a hacer y *por qué*, para que las Fases 10b–13 se ejecuten sin re-discutir.
+
+### 12.0 Por qué cambia el alcance
+
+Hasta la Fase 10 el proyecto era "un portafolio bonito". El dueño, tras investigar cómo se arma un
+portafolio de fotografía que **sirva de verdad**, concluyó que sin dos cosas no le sirve a un
+fotógrafo: **proteger** los archivos (para dejar de regalarlos o depender de plataformas de
+terceros) y **poder venderlos** (licenciarlos). El proyecto sigue siendo una **demo con datos
+ficticios**, pero ahora demuestra ese kit completo, con funciones **reales** (sin simular).
+
+### 12.1 Decisiones D9–D13 (resumen; detalle y *por qué* en `PLAN_DESARROLLO.md` §4)
+
+| # | Qué se decidió | Motivo corto |
+|---|---|---|
+| D9 | Marca de agua **obligatoria** en todo lo `public`, **configurable desde el gestor** (subir PNG o usar texto), estampada por el **servidor**. | Opcional = olvidada. En el cliente (CSS) = quitable. |
+| D10 | **Capturar** un registro de derechos por imagen **y embeberlo** (IPTC/XMP) en cada archivo servido; el pipeline pasa de "sin ningún metadato" a "sin metadato de ubicación/equipo, con metadato de derechos". | Proteger = que el archivo lleve pegado quién es el dueño y bajo qué términos. GPS/serie siguen fuera por privacidad. |
+| D11 | **Solo licencia digital** por ahora (provisional — el dueño investigará impresiones). | El flujo completo funciona sin inventario ni envíos. |
+| D12 | Fase 12 **sin pago**; Fase 13 = Stripe **modo test** tras flag, **diferida ≈2026‑09‑17**. El **proyecto padre** cobrará de verdad; aquí solo claves de prueba. Hoy el padre **no tiene** claves Stripe. | Cobro real en repo público no aporta a una demo. |
+| D13 | Campo `category` en `albums`, **IA plana** hasta que haya >1 categoría en uso. | Barato ahora, evita migración; no cargar al visitante con una decisión antes de tiempo. |
+
+### 12.2 Modelo de datos nuevo
+
+Campos añadidos a tablas existentes:
+
+| Tabla | Campo | Para qué |
+|---|---|---|
+| `images` | `status` (`archived` / `draft` / `published`, default `published`) | Curación (Fase 10b). La galería pública solo muestra `published`. |
+| `albums` | `category` (`editorial` / `commercial` / `personal`, nullable) | D13. Sin efecto en la IA hasta que se use. |
+| `site_settings` | `watermark_asset_id` (uuid, nullable), `watermark_text`, `watermark_opacity`, `watermark_placement` (`tiled` / `corner`) | D9. Configuración global de marca de agua. |
+| `site_settings` | `rights_holder`, `creator`, `credit_line`, `rights_statement`, `default_license_terms`, `licensor_url` | D10. Valores por defecto del registro de derechos. |
+| `images` | `rights` (JSON: mismos campos que arriba, por imagen; hereda de `site_settings` si vacío) | D10. Registro de derechos por foto. |
+
+Tablas nuevas (Fase 12):
+
+| Tabla | Contenido |
+|---|---|
+| `license_requests` | Solicitud pública: `image_id`, datos del solicitante (nombre/correo), `intended_use` (`editorial`/`commercial`/`social`/`print`), alcance/descripción, presupuesto, `status` (`new`/`quoted`/`accepted`/`declined`/`fulfilled`), IP (solo registro). |
+| `licenses` | Licencia emitida: `request_id`, `image_id`, licenciatario, uso concedido, vigencia (`starts_at`/`ends_at` o perpetua), precio acordado, notas. Historial/prueba. |
+| `delivery_tokens` | Entrega del archivo limpio: `license_id`, `token_hash` (sha256), `expires_at`, `used_at` (un solo uso), `downloads_max`. Mismo patrón que `album_share_tokens`. |
+| `watermark_assets` *(o reutilizar `images` con un tipo)* | El PNG de marca de agua subido. Pasa por un pipeline propio (validación por contenido, límite de tamaño) pero **no** se le aplica marca ni derivados. |
+
+### 12.3 Pipeline de marca de agua (Fase 11)
+
+- **Dónde**: dentro de `ImagePipelineService`, **después** del re-encode que ya quita EXIF y
+  **antes** de generar los 4 derivados WebP. Se estampa una vez por cada tamaño (la marca escala
+  con la imagen para que se vea igual de "densa" en thumb y en large).
+- **Cómo**: `sharp().composite([...])`. Si hay `watermark_asset_id` → se usa ese PNG en mosaico
+  (`tile: true`) o en una esquina, con `opacity` de `site_settings`. Si no → se rasteriza el
+  `watermark_text` a un SVG pequeño y se compone igual.
+- **Qué NO se marca**: el **original** (se guarda limpio, nunca se sirve en público) y la **entrega
+  bajo licencia** (sale del original limpio).
+- **Regeneración**: cambiar la marca en el gestor encola un rehacer de los derivados públicos de
+  las colecciones afectadas (job en Redis; el original no se toca).
+- **Rendimiento**: la composición añade ~1 paso por derivado; se mide y se documenta el coste real
+  (presupuesto: la subida de una foto no debe pasar de ~X s — se fija al construir).
+
+### 12.4 Registro y embebido de metadatos de derechos (Fase 11)
+
+- **Captura**: en el gestor, cada imagen tiene un bloque "Derechos" con los campos de la tabla
+  `images.rights`; si se dejan vacíos, heredan de `site_settings`. El seed los rellena para "Mara
+  Solís".
+- **Embebido**: `sharp` por sí solo escribe poco IPTC/XMP; se usa `sharp().withMetadata({...})` para
+  lo básico y, si hace falta más cobertura (IPTC completo), un paso con `exiftool` (binario en la
+  imagen del backend) o la librería `exifreader`/`piexifjs` equivalente — se decide al construir,
+  documentando el porqué.
+- **Qué se embebe**: `Copyright` / `Artist` / `XMP:Rights` / `XMP:Credit` / `XMP:CreatorContactInfo`
+  (URL del licenciante) / `IPTC:CopyrightNotice` / `IPTC:Caption` / `IPTC:Keywords`. En la **entrega
+  bajo licencia** se añade además el **licenciatario y el término concedido** (traza de a quién se
+  entregó).
+- **Qué se sigue quitando SIEMPRE**: GPS, número de serie de cámara/lente, `MakerNotes`, marca
+  temporal exacta del disparo si el dueño lo pide. `PRUEBAS_SEGURIDAD.md` F11 se reescribe en esos
+  términos (antes: "0 bytes de metadatos"; ahora: "0 bytes de ubicación/equipo; derechos presentes").
+
+### 12.5 Flujo de licenciamiento y entrega (Fase 12)
+
+```
+Visitante                     Gestor (fotógrafo)                 Sistema
+  |  ve una foto (con marca)        |                               |
+  |  "solicitar licencia" --------> |                               |
+  |  elige uso + describe           |  POST /licenses/requests ----> crea license_request (status=new)
+  |                                 |  <---- aparece en la bandeja   |
+  |                                 |  revisa y COTIZA ------------> license_request.status=quoted (precio, vigencia)
+  |  <---- correo con la cotización  |                               |
+  |  acepta ----------------------> |  POST .../accept -----------> crea license + delivery_token
+  |  <---- correo con enlace firmado (un solo uso, caduca) <------- |
+  |  descarga el archivo LIMPIO ---------------------------------->  delivery_token.used_at = now()
+```
+
+- La **bandeja del gestor** (hoy solo contacto) pasa a tener **dos tipos**: `contact` y
+  `license_request`. Misma pantalla, filtro por tipo.
+- La **entrega** reutiliza el patrón de `album_share_tokens` + `media-signing.ts`: URL con
+  `exp`+`sig` HMAC, y además `delivery_tokens.used_at`/`downloads_max` para el "un solo uso".
+- El archivo entregado es el **original** (no un derivado), sin marca, con los metadatos de derechos
+  **y** de licenciatario embebidos.
+
+### 12.6 Pago — Fase 13 (diferida ≈2026-09-17)
+
+- Módulo `payments` **desactivado por defecto** (`PAYMENTS_ENABLED=false` en `.env`).
+- Cuando exista la cuenta de Stripe (del proyecto padre): claves **de test** en `.env` (nunca en el
+  repo), `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`. Checkout de Stripe para la cotización
+  aceptada; el **webhook** `checkout.session.completed` dispara la emisión de `license` +
+  `delivery_token` (lo que en la Fase 12 hace el botón "aceptar" a mano).
+- El **repo es público** → `.env.example` lleva solo placeholders; el módulo se prueba en local con
+  las claves de test del dueño. Nunca `sk_live_`.
+
+### 12.7 Impacto en lo ya construido
+
+| Ya existe | Cambia |
+|---|---|
+| Pipeline `sharp` (Fase 3) | + paso de marca de agua; regla de metadatos pasa de "quitar todo" a "quitar sensible, poner derechos". |
+| `MediaService.listPublic` / `getGallery` (Fase 3) | filtran por `images.status = 'published'`. |
+| Seed `seed-portfolio.ts` (Fase 10) | cura: ~12–20 `published` por colección, el resto `archived`; rellena `rights` y sube una marca de agua de ejemplo. |
+| Gestor `/studio/[albumId]` (Fase 5) | + control de `status` por imagen, bloque "Derechos", vista contact-sheet. |
+| `/studio/ajustes` (Fase 10) | + sección "Marca de agua" (subir PNG / texto / opacidad / colocación) y "Derechos por defecto". |
+| Bandeja `/studio/mensajes` (Fase 10) | pasa a "Bandeja" con tipos `contact` + `license_request`. |
+| `PRUEBAS_SEGURIDAD.md` | F11 reescrita (metadatos); fichas nuevas para marca de agua no evitable, entrega de un solo uso, RBAC de `/licenses`. |

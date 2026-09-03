@@ -118,18 +118,28 @@ arrastre, enlaces de compartir para segundas opiniones, edición fácil desde el
   `/trabajo` cuando haya dos audiencias que se autoseleccionan.
 
 ### Capa de protección de la obra — *el fotógrafo deja de regalar sus fotos*
-- **Marca de agua** aplicada por el pipeline a **todos** los derivados públicos (thumb → large).
-  Configurable (§4 D9): texto por defecto de `site_settings` o PNG de logo subido; patrón diagonal
-  repetido tenue u opción de esquina. El **original de resolución completa nunca se sirve en
-  público** — solo derivados marcados; el archivo limpio vive tras el muro de licenciamiento y solo
-  sale por URL firmada de un solo uso.
-- **Metadatos de derechos embebidos** (§4 D10): se revisa la regla actual "tirar todo el EXIF" →
-  seguir eliminando GPS / número de serie / datos personales, pero **incrustar IPTC/XMP**
-  (`© / creator / credit / rights / licensor URL`) en cada archivo servido. Derechos legibles por
-  máquina; es señal legal, **no** DRM.
+- **Marca de agua** (§4 D9) aplicada por el **pipeline del servidor** a **todos** los derivados
+  públicos (thumb → large). Configurable desde el gestor:
+  - Un **formulario en el gestor para subir la imagen de marca de agua** (PNG con transparencia).
+  - Si no se sube ninguna, se estampa un **texto** (el aviso de `site_settings`, p. ej. `© Mara Solís`).
+  - Se aplica como **patrón diagonal repetido tenue** (opción de esquina), con opacidad ajustable.
+  - **No desactivable** para colecciones `public`. La **entrega bajo licencia** (§ siguiente) sale
+    **sin** marca.
+  - El **original de resolución completa nunca se sirve en público** — solo derivados marcados; el
+    archivo limpio vive tras el muro de licenciamiento y solo sale por URL firmada de un solo uso.
+- **Registro de derechos por imagen + embebido de metadatos** (§4 D10). Dos partes:
+  1. **Captura**: el gestor guarda por foto — titular del copyright, autor/crédito, año de primera
+     publicación, aviso de derechos, término de licencia por defecto, descripción, palabras clave.
+     Valores por defecto tomados de `site_settings`, editables por imagen.
+  2. **Embebido**: el pipeline deja de "tirar TODO el EXIF" y pasa a **quitar solo lo sensible**
+     (GPS, número de serie de cámara, datos personales del disparo) e **incrustar IPTC/XMP** con
+     esos campos de derechos en **cada archivo servido** (derivados públicos con marca *y* entrega
+     limpia bajo licencia). Es señal **legal legible por máquina**, no DRM. `PRUEBAS_SEGURIDAD.md`
+     F11 se actualiza: "sin GPS/serie" sigue siendo obligatorio; "sin ningún metadato" se sustituye
+     por "solo metadatos de derechos, nunca de ubicación/equipo".
 - **Disuasores de copia** en el frontend: bloquear arrastre y menú contextual sobre las imágenes,
   capa transparente sobre la figura. Documentado con honestidad: son **disuasores**, no control de
-  acceso — el control real es que el archivo bueno no se sirve.
+  acceso — el control real es que el archivo bueno no se sirve y que lo que sí se sirve va marcado.
 - **Aviso de copyright** visible: en el pie del sitio y junto a cada foto en el lightbox
   (texto de `site_settings`).
 - Fuera de alcance por ahora: marca de agua **forense/invisible** (esteganográfica) para rastrear
@@ -146,9 +156,12 @@ arrastre, enlaces de compartir para segundas opiniones, edición fácil desde el
   de derechos y de licenciatario embebidos).
 - Registro consultable de licencias emitidas (qué foto, a quién, qué uso, vigencia) — sirve de
   prueba y de historial.
-- **Sin rail de pago en el sitio en la primera versión** (§4 D12): la transacción es
-  solicitud → cotización → entrega; el pago se acuerda fuera. Stripe en **modo test tras un feature
-  flag** queda como Fase 13, solo si se decide cobrar dentro.
+- **Rail de pago** (§4 D12): la **Fase 12 no cobra en el sitio** (solicitud → cotización → entrega;
+  el pago se acuerda fuera). La **Fase 13** añade **checkout de Stripe en modo test** tras un
+  feature flag — **diferida ~15 días** (hasta tener cuenta de Stripe, ≈2026‑09‑17). El **proyecto
+  padre** (`projects/dvlopr-bn`) es el que cobra de verdad; esta demo solo demuestra el flujo con
+  claves **de prueba**. Hoy el proyecto padre no tiene claves de Stripe → el módulo se cablea
+  **desactivado** y se conecta cuando existan. **Nunca** claves `live` en este repo.
 - **Venta de impresiones**: fuera de la primera versión (§4 D11) — es otro producto (inventario,
   envío); se evalúa después de la licencia digital.
 
@@ -209,19 +222,20 @@ Mismo stack en todas las capas, sin variarlo sin confirmarlo:
   fase posterior aparte, solo si se pide).
 - Repositorio git propio desde el primer commit.
 
-### Decisiones abiertas — reencuadre a "portafolio que protege y vende" (2026-09-02)
+### Decisiones D9–D13 — reencuadre a "portafolio que protege y vende" (resueltas 2026-09-02)
 
 > El dueño reencuadró el proyecto: no una galería más, sino la demo del kit real para **publicar,
-> proteger y vender** obra fotográfica. Estas cinco decisiones deben cerrarse antes de arrancar la
-> Fase 11. La columna "recomendación" es la propuesta del arquitecto; el dueño confirma o corrige.
+> proteger y vender** obra fotográfica. Estas cinco decisiones se plantearon como abiertas y el
+> dueño las cerró el mismo día (respondiendo a las recomendaciones del arquitecto). Detalle
+> técnico y *por qué* de cada una en `DOCUMENTO_VIVO_ARQUITECTURA.md` §12.
 
-| # | Decisión | Opciones | Recomendación |
+| # | Decisión | Resuelto | Por qué |
 |---|---|---|---|
-| **D9** | **Marca de agua** — ¿obligatoria en todo lo público o configurable por colección? ¿Forma (diagonal repetida / esquina / logo)? ¿Origen (texto de `site_settings` / PNG subido)? | (a) siempre, fija · (b) siempre, configurable · (c) opcional por colección | **(b)** obligatoria en público, configurable: texto de `site_settings` por defecto + opción de PNG de logo; patrón diagonal repetido tenue, con opción de esquina. Nunca desactivable para `public` (sí para entrega bajo licencia). |
-| **D10** | **Metadatos** — la regla actual del pipeline es "tirar TODO el EXIF". ¿Se cambia a "tirar identificativo/ubicación, **embeber** derechos (IPTC/XMP)"? | (a) mantener: tirar todo · (b) tirar GPS/serie/personal, embeber `© / autor / crédito / licencia` | **(b)**. Práctica correcta de la industria; no reintroduce riesgo (GPS y serie siguen fuera). Actualizar `PRUEBAS_SEGURIDAD.md` F11. |
-| **D11** | **Alcance de venta** — ¿solo licencia **digital** o también **impresiones**? ¿editorial + comercial o un solo tipo de uso? | (a) solo licencia digital · (b) digital + impresiones | **(a)** en la primera versión: licencia digital, con tipos de uso `editorial` / `comercial` / `social` / `impresión` (este último como "licencia para imprimir", sin inventario). Venta de impresiones físicas: fase posterior. |
-| **D12** | **Rail de pago en el sitio** | (a) sin pago: solicitud → cotización → entrega, pago fuera · (b) enlace de pago externo (Stripe Payment Link / PayPal.me) · (c) checkout Stripe en **modo test** tras un feature flag | **(a)** para la primera versión (Fases 11–12). **(c)** como **Fase 13 opcional**, siempre en modo test mientras el repo sea público y la seguridad sea prioridad #1. Nunca claves `live` en el repo. |
-| **D13** | **Separación comercial / editorial** en la IA (campo `category` en `albums` + `/trabajo` agrupado) | (a) no, IA plana · (b) campo `category` opcional, agrupar solo si hay >1 categoría en uso | **(b)** — añadir el campo al schema (barato), pero la IA sigue plana mientras la persona demo (documental) tenga una sola audiencia. Se activa sin migración el día que haga falta. |
+| **D9** | Marca de agua | ✅ **Obligatoria en todo lo `public`, configurable desde el gestor.** El gestor tiene un **formulario para subir la imagen de marca de agua** (PNG con transparencia); si no se sube ninguna, se usa un texto (el de `site_settings`, p. ej. `© Mara Solís`). El pipeline la estampa en **todos** los derivados públicos (thumb → large) como patrón diagonal repetido tenue (opción de esquina). **No** se puede desactivar para `public`; la entrega bajo licencia sí sale **sin** marca. | Una marca opcional se termina olvidando justo en la foto que importa. El logo subido es lo que un fotógrafo espera; el texto es un buen respaldo que funciona desde el minuto cero. Estampar en el servidor (no en CSS) es lo único que un tercero no puede quitar. |
+| **D10** | Captura y embebido de datos de derechos | ✅ **Sí, captura completa.** Dos partes: **(1) registro de derechos por imagen** — el gestor captura y guarda por foto: titular del copyright, autor/crédito, año de primera publicación, aviso de derechos, término de licencia por defecto, descripción y palabras clave. **(2) embebido**: el pipeline deja de "tirar todo el EXIF" y pasa a **quitar solo lo sensible** (GPS, número de serie de cámara, datos personales del disparo) e **incrustar IPTC/XMP** con esos campos de derechos en **cada archivo servido** (derivados públicos con marca y entrega limpia bajo licencia). | "Proteger la obra" no es solo la marca visible: es que el archivo lleve *pegado*, de forma legible por máquina y por tribunales, quién es el dueño y bajo qué términos se puede usar. Quitar GPS/serie sigue siendo obligatorio (privacidad del fotógrafo). |
+| **D11** | Alcance de venta | ✅ **Provisional: solo licencia digital** (el dueño investigará más). Tipos de uso: `editorial` / `comercial` / `social` / `impresion` (este último = "licencia para imprimir", sin inventario ni envío). Venta de impresiones físicas: fuera de alcance hasta nueva decisión. | Empezar por lo digital deja el flujo completo (solicitud → cotización → entrega firmada) funcionando sin meter inventario, envíos ni impuestos. El modelo de datos no cierra la puerta a impresiones. |
+| **D12** | Rail de pago | ✅ **Fase 12 sin pago en el sitio** (solicitud → cotización → entrega; el pago se acuerda fuera). **Fase 13: checkout de Stripe en modo test**, detrás de un feature flag, **diferida ~15 días** (hasta tener la cuenta de Stripe, ≈2026‑09‑17). El **proyecto padre** (`projects/dvlopr-bn`, el portafolio) es el que cobrará de verdad; esta demo solo demuestra el flujo con claves **de prueba**. **El proyecto padre aún no tiene claves de Stripe** — no hay nada que reutilizar hoy; se cablea el módulo desactivado y se conectan las claves de test cuando existan. **Nunca** claves `live` en este repo (es público). | Un cobro real en un repo público con seguridad como prioridad #1 no aporta a una demo y sí añade superficie. El flujo de negocio (cotizar, licenciar, entregar) se demuestra entero sin tarjeta; el checkout test se añade encima cuando haya cuenta. |
+| **D13** | Separación comercial / editorial | ✅ **Campo `category` en `albums`** (`editorial` / `comercial` / `personal`), pero **IA plana** por ahora: `/trabajo` no se agrupa mientras la persona demo (documental) tenga una sola audiencia. Se activa la agrupación sin migración el día que haya >1 categoría en uso. | El campo cuesta casi nada ahora y evita una migración incómoda después; agrupar la navegación antes de que haga falta solo añade una decisión al visitante. |
 
 ---
 
@@ -318,7 +332,7 @@ hay nada que probar) y se llena en paralelo a cada pieza que se construya.
 | **8. Docs autogenerada** | `docs/` (MkDocs+Swagger) + Compodoc en `docker-compose.yml` | fase 2+ |
 | **9. Despliegue** | `docker-compose.prod.yml` + reverse proxy (Caddy) para `galeria.dvloprbn.dev` con la API bajo `/api/*`; Dockerfiles de producción multi-etapa; `.env` de producción (`STORAGE_DRIVER=cloudinary`, `NODE_ENV=production`, sin puertos de datos publicados); enlace desde el portafolio | D8, fases 1–7 |
 | **10. Reencuadre como portafolio** | `site_settings` + `contact_messages` + `albums.featured`; endpoints `/site` y `/contact`; sitio público editorial (portada con hero, `/trabajo`, `/sobre`, `/contacto`); gestor con ajustes de identidad y bandeja; `scripts/seed-portfolio.ts` (persona "Mara Solís" + 6 colecciones) | fases 1–5 |
-| **10b. Curación** *(amplía la 5)* | Estado de publicación por imagen (`archivada` / `borrador` / `publicada`); vista contact-sheet en el gestor; la galería pública muestra solo la **selección publicada**; el seed pasa a curar (12–20 por colección, el resto archivado) | fase 10, D9 |
-| **11. Protección de la obra** | Marca de agua en el pipeline para **todos** los derivados públicos (config. por `site_settings` / PNG de logo); original de alta resolución **fuera** del servido público; metadatos IPTC/XMP de derechos embebidos (revisa la regla "tirar todo EXIF"); disuasores de copia + aviso de copyright en el frontend | D9, D10, fases 3 y 10 |
-| **12. Licenciamiento y entrega** | Modelo `license_requests` / `licenses` / `delivery_tokens`; flujo público solicitud de licencia por foto (uso + alcance); flujo del gestor cotizar → emitir licencia → **entrega del archivo limpio por URL firmada de un solo uso y caducidad**; registro de licencias; la bandeja del gestor unifica contacto + solicitudes | D11, fases 10b y 11 |
-| **13. Pago en el sitio** *(opcional)* | Solo si D12 = (c): checkout Stripe en **modo test** tras un feature flag; webhooks; nunca claves `live` en el repo | D12, fase 12 |
+| **10b. Curación** *(amplía la 5)* | Estado de publicación por imagen (`archivada` / `borrador` / `publicada`); vista contact-sheet en el gestor; la galería pública muestra solo la **selección publicada**; el seed pasa a curar (12–20 por colección, el resto archivado) | fase 10 |
+| **11. Protección de la obra** | Formulario en el gestor para **subir la marca de agua** (PNG) + texto de respaldo; el pipeline la estampa en **todos** los derivados públicos; original de alta resolución **fuera** del servido público; **registro de derechos por imagen** + **embebido IPTC/XMP** (nueva regla de metadatos: sin GPS/serie, con derechos); disuasores de copia + aviso de copyright en el frontend | D9, D10, fases 3 y 10 |
+| **12. Licenciamiento y entrega** | Modelo `license_requests` / `licenses` / `delivery_tokens`; flujo público solicitud de licencia por foto (uso `editorial`/`comercial`/`social`/`impresion` + alcance); flujo del gestor cotizar → emitir licencia → **entrega del archivo limpio por URL firmada de un solo uso y caducidad** (con derechos + licenciatario embebidos); registro de licencias; la bandeja del gestor unifica contacto + solicitudes. **Sin cobro en el sitio.** | D11, fases 10b y 11 |
+| **13. Pago con Stripe (modo test)** *(diferida ≈2026-09-17)* | Checkout de Stripe en **modo test** tras un feature flag (`PAYMENTS_ENABLED`); webhook de confirmación → emite la licencia y el `delivery_token` automáticamente. Se conecta cuando exista la cuenta de Stripe del proyecto padre; **nunca** claves `live` en el repo | D12, fase 12 |

@@ -204,15 +204,24 @@ Las fases 1–10 están **completas**: 1 infra · 2 identidad · 3 media · 4 ga
 6 animación (CSS) · 7 seguridad transversal · 8 docs · 9 despliegue (artefactos) · 10 reencuadre
 como portafolio.
 
-**Reencuadre de alcance (2026-09-02).** El dueño amplió el objetivo: el sitio debe demostrar el
-**kit real para que un fotógrafo publique, proteja y venda su obra** (no una galería más). Nuevas
-fases planificadas en `PLAN_DESARROLLO.md` §10 — **10b Curación** (estado de publicación por imagen
-+ selección curada), **11 Protección** (marca de agua en el pipeline, original de alta resolución
-fuera del servido público, metadatos IPTC/XMP de derechos, disuasores + aviso de copyright),
-**12 Licenciamiento** (solicitud → cotización → entrega del archivo limpio por URL firmada de un
-solo uso), **13 Pago** (opcional, Stripe test-mode tras flag). **Bloqueadas por 5 decisiones
-abiertas D9–D13** (`PLAN_DESARROLLO.md` §4) que el dueño debe cerrar antes de arrancar la Fase 11 —
-resumen y recomendaciones en ese documento.
+**Reencuadre de alcance (2026-09-02) — decisiones D9–D13 RESUELTAS.** El dueño amplió el objetivo:
+el sitio debe demostrar el **kit real para que un fotógrafo publique, proteja y venda su obra** (no
+una galería más), y cerró las cinco decisiones el mismo día:
+
+- **D9** marca de agua: obligatoria en `public`, **formulario en el gestor para subir la imagen**
+  (PNG) + texto de respaldo; estampada por el servidor en todos los derivados públicos.
+- **D10** datos de derechos: **captura completa** por imagen (titular, autor, crédito, año, aviso,
+  término de licencia, descripción, keywords) **+ embebido IPTC/XMP** en cada archivo servido; el
+  pipeline pasa de "quitar todo el EXIF" a "quitar GPS/serie/personal, poner derechos".
+- **D11** venta: **solo licencia digital** por ahora (provisional, el dueño investigará impresiones).
+- **D12** pago: Fase 12 sin cobro; **Fase 13 = Stripe modo test tras flag, diferida ≈2026‑09‑17**
+  (hasta tener cuenta Stripe; el proyecto padre cobrará de verdad, aquí solo claves de prueba; el
+  padre aún **no tiene** claves Stripe).
+- **D13** comercial/editorial: campo `category` en `albums`, IA plana por ahora.
+
+Fases nuevas en `PLAN_DESARROLLO.md` §10: **10b Curación**, **11 Protección**, **12 Licenciamiento**,
+**13 Pago (diferida)**. Diseño técnico + modelo de datos + *por qué* de cada decisión en
+`DOCUMENTO_VIVO_ARQUITECTURA.md` **§12** (solo diseño, sin construir).
 
 **Repositorio remoto: hecho (2026-09-02).** El código está en `github.com/DvloprBn/gallery-component`
 (rama `main`, historial completo). El `origin` local usa **SSH** (`git@github.com:DvloprBn/gallery-component.git`),
@@ -228,8 +237,9 @@ Lo que queda, cuando el dueño quiera:
 2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
 3. Opcional: prev/next entre colecciones en `/g/[slug]`; probar `STORAGE_DRIVER=cloudinary` contra
    la cuenta real; sustituir la "Selección de encargos" fija de `/sobre` por contenido editable.
-4. **Cerrar D9–D13** para desbloquear las fases 10b–13 (protección + licenciamiento). Es lo que
-   convierte esto de "portafolio bonito" en "portafolio que un fotógrafo usaría para vender".
+4. **Arrancar la Fase 10b** (curación) → **11** (protección: marca de agua + derechos) → **12**
+   (licenciamiento). D9–D13 ya resueltas; falta la confirmación del dueño para **salir de modo
+   diseño y escribir código**. La Fase 13 (pago Stripe) espera a ≈2026‑09‑17.
 
 ---
 
@@ -237,6 +247,7 @@ Lo que queda, cuando el dueño quiera:
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-02 | **Decisiones D9–D13 resueltas + diseño técnico del reencuadre.** El dueño cerró las cinco decisiones abiertas: **D9** marca de agua obligatoria en `public`, con **formulario en el gestor para subir el PNG** (+ texto de respaldo), estampada por el servidor en todos los derivados públicos; **D10** — aclarado que "metadatos" = **capturar** un registro de derechos por imagen (titular, autor, crédito, año, aviso, término de licencia, descripción, keywords) **y embeberlo** en IPTC/XMP en cada archivo servido, con el pipeline pasando de "quitar todo el EXIF" a "quitar solo GPS/serie/personal, poner derechos"; **D11** solo licencia digital por ahora (provisional); **D12** Fase 12 sin cobro, **Fase 13 = Stripe modo test tras flag `PAYMENTS_ENABLED`, diferida ≈2026‑09‑17** (hasta tener cuenta Stripe — el proyecto padre `projects/dvlopr-bn` cobrará de verdad y aún **no tiene** claves Stripe; esta demo solo usará claves de prueba, nunca `live` en el repo público); **D13** campo `category` en `albums` con IA plana por ahora. `PLAN_DESARROLLO.md` §4 pasa D9–D13 a "resueltas" con el *por qué* de cada una; §2 y §10 ajustados (formulario de marca de agua, registro de derechos, Fase 13 con fecha). **`DOCUMENTO_VIVO_ARQUITECTURA.md` §12 nueva** — diseño completo sin construir: modelo de datos (`images.status`/`images.rights`, `albums.category`, campos de marca de agua y derechos en `site_settings`, tablas `license_requests`/`licenses`/`delivery_tokens`), pipeline de marca de agua (`sharp().composite`, tras el re-encode, antes de los derivados), embebido IPTC/XMP, flujo de licenciamiento con diagrama, pago diferido, e impacto en lo ya construido. Sin código — sigue en modo diseño hasta que el dueño confirme. |
 | 2026-09-02 | **Reencuadre de alcance: portafolio que protege y vende.** El dueño, tras investigar cómo se arma un portafolio de fotografía que sirva de verdad, amplió el objetivo: el sitio debe demostrar el **kit real para publicar, proteger y vender** obra — marca de agua, derechos embebidos, el archivo bueno tras un muro, y un flujo de licenciamiento — no una galería más "que hoy nadie va a ver". Datos ficticios, funcionalidad real. Analizada la investigación del dueño (7 principios de portafolio + guía tipo VSCO): **adoptados** "mostrar menos de lo que se tiene" (→ estado de publicación por imagen + selección curada), "contacto en un clic desde cualquier lugar", "agrupar por tipo no por cliente", "un scroll por especialidad"; **ya cubiertos** "abrir con imagen no con menú", "poseer el dominio" (D8), "segundas opiniones" (enlaces de compartir); **opcional** separar comercial/editorial (campo `category`); **descartado como software** el resto (proceso del fotógrafo, no del sitio). `PLAN_DESARROLLO.md` reescrito: §1 (marco), §2 (capas nuevas de **protección** y **licenciamiento**), §4 (decisiones abiertas **D9–D13**), §10 (fases **10b Curación**, **11 Protección**, **12 Licenciamiento**, **13 Pago opcional**). Sin código: modo diseño, y las fases 11+ están bloqueadas hasta cerrar D9–D13. Recomendaciones del arquitecto para cada decisión en §4. |
 | 2026-09-02 | **Fix: las imágenes no cargaban en el navegador (CORP).** `helmet()` pone `Cross-Origin-Resource-Policy: same-origin` en toda respuesta; en desarrollo el frontend (`:3051`) y la entrega de media (`:3050`) son orígenes distintos, así que el navegador se negaba a pintar cada `<img>` (con `curl` no se veía — CORP no se aplica ahí; salían 200). `GET /media/:key` pasa a marcar `Cross-Origin-Resource-Policy: cross-origin` — es contenido público pensado para CDN, y el control de los privados es la firma HMAC de la URL, no CORP. Las respuestas **JSON** de la API conservan `same-origin`. Verificado: `/media/:key` → `cross-origin`, `/galleries` y `/site` → `same-origin`; `tsc` + 50 tests OK. Ficha F15 en `PRUEBAS_SEGURIDAD.md`. |
 | 2026-09-02 | **Fase 10 — seed completo + límite de subida configurable.** `seed-portfolio.ts` pasa a consumir **todo** el contenido de `projects/espiral/images/uso_libre` (244 fotos) en **6 colecciones**: Calle←`Skate/` (89), Tinta←`tatoos/` (37), Muros←`grafitti/` (38), Humo←`smoke/` (25), Ciudad←`Qro/`+`varias/`+`espirales/` (34) y **Cuaderno** nueva ←`*.jpg` sueltos de la raíz (21). Ahora es **convergente**: borra y rehace cada colección del portafolio en cada corrida (suelta antes el `hero_image_id` para no bloquear el borrado de "Calle"). `ImagesService.MAX_UPLOADS_PER_HOUR` se lee de **`UPLOAD_MAX_UPLOADS_PER_HOUR`** (default 120; `.env` de dev → 5000 para sembrar de un tirón, `.env.prod.example` → 120) — sin esto el seed se corta con 429 al pasar de 120 subidas/hora. **Verificado**: `GET /galleries` → 6 colecciones / 244 fotos, todas con portada; `?featured=true` → 4; volumen `gallery_storage` 1260 objetos ≈235 MB; `/` y `/trabajo` → 200 con las 6 tarjetas; `tsc` + 50 tests OK. `.env.example`/`.env.prod.example` documentan la variable. |
