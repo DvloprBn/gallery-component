@@ -30,10 +30,13 @@ describe('ImagesService.setStatusBulk', () => {
     albums = { getOwned: jest.fn().mockResolvedValue({ album_id: 'alb1' }) };
     service = new ImagesService(
       prisma as unknown as PrismaService,
-      {} as never,
-      {} as never,
-      {} as never,
+      {} as never, // storage
+      {} as never, // pipeline
+      {} as never, // redis
       albums as unknown as AlbumsService,
+      {} as never, // watermark
+      {} as never, // metadata
+      {} as never, // site
     );
   });
 

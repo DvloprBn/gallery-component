@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { GalleryImage } from '@/lib/gallery-schema';
+import { useSite } from '@/lib/site';
 
 /**
  * Visor a pantalla completa. Se abre desde una imagen de la galería; permite
@@ -22,6 +23,7 @@ export function Lightbox({
   index: number | null;
   onIndexChange: (next: number | null) => void;
 }) {
+  const site = useSite();
   const isOpen = index !== null;
   // `mounted` mantiene el nodo un instante tras cerrar, para la transición de salida.
   const [mounted, setMounted] = useState(isOpen);
@@ -98,9 +100,15 @@ export function Lightbox({
           className="g-lightbox-img"
           src={current.urls.large ?? current.urls.medium ?? current.urls.original}
           alt={current.altText ?? ''}
+          draggable={false}
+          onDragStart={(event) => event.preventDefault()}
+          onContextMenu={(event) => event.preventDefault()}
         />
         {current.caption ? (
           <figcaption className="g-lightbox-caption">{current.caption}</figcaption>
+        ) : null}
+        {site.rights.noticeText ? (
+          <p className="g-lightbox-rights">{site.rights.noticeText}</p>
         ) : null}
       </figure>
       <button

@@ -81,10 +81,13 @@ nivel igual o superior al suyo.
 - **Administración** (`admin`/`director`/`super`): `/roles` (CRUD) · `/users` (listar, alta, editar)
 - **Álbumes** (dueño o admin): `/albums` (CRUD) · `/albums/:id/share-tokens` (crear/revocar)
 - **Imágenes**: `POST /albums/:id/images` (subida) · `GET /albums/:id/images` ·
-  `POST /albums/:id/images/reorder` · `PATCH /images/:id` · `DELETE /images/:id`
+  `POST /albums/:id/images/reorder` · `POST /albums/:id/images/status` (curación en bloque) ·
+  `PATCH /images/:id` (incluye `status` y `rights`) · `DELETE /images/:id`
 - **Entrega pública**: `GET /galleries` (índice; `?featured=true` para las de portada) ·
-  `GET /g/:slug` (galería) · `GET /media/:key` (archivos, driver de disco)
-- **Sitio**: `GET /site` (identidad pública) · `PATCH /site` (`admin`+) ·
+  `GET /g/:slug` (galería, solo imágenes publicadas) · `GET /media/:key` (archivos, driver de disco)
+- **Sitio**: `GET /site` (identidad pública, incluye marca de agua y derechos) ·
+  `PATCH /site` (`admin`+) · `POST/DELETE /site/watermark` (logo, `admin`+) ·
+  `POST/GET /site/watermark/regenerate` (regenerar en segundo plano, `admin`+) ·
   `POST /contact` (público, honeypot) · `GET|PATCH|DELETE /contact/messages` (`admin`+)
 
 Referencia completa en Swagger (`http://localhost:3050/docs`, solo dev), en el portal de
@@ -120,11 +123,14 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-53 tests, 11 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+79 tests, 14 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), dos
-suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas) y las
+suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas), las
 unitarias de `SiteService` / `ContactService` / `ImagesService` (validación del hero publicado,
-honeypot, escape del correo, cambio de estado en bloque acotado al álbum).
+honeypot, escape del correo, cambio de estado en bloque acotado al álbum, regeneración en segundo
+plano) y las de la Fase 11 — `rights.util.spec.ts`, `watermark.service.spec.ts` (incluye el
+test de regresión del mosaico que rompía el `thumb`) y `rights-metadata.service.spec.ts`
+(integración con el `exiftool` real).
 
 Pruebas de seguridad replicables de la Fase 10 (RBAC de `/site` y `/contact`, honeypot, XSS
 almacenado, throttle, fuga de IP):

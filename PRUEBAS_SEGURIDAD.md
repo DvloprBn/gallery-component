@@ -12,21 +12,22 @@
 > Arranca **vacío**: sin endpoints todavía no hay nada que probar. Se llena en paralelo a cada
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
-Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio) y 10 (portafolio: `/site` + `/contact`)
-verificadas.** Verificados con `curl` / scripts contra el backend en vivo los puntos de OWASP API
-Top 10 que aplican, el bloque de **seguridad de archivos** (F1–F14) y el de identidad de sitio /
-contacto (S1–S13 — ver más abajo). Pendiente para producción: confirmar API9 (inventario) y correr
-F7/F10 con volumen/espera reales.
+Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
+10b (curación) y 11 (protección: marca de agua + derechos) verificadas.** Verificados con `curl` /
+scripts contra el backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de
+**seguridad de archivos** (F1–F19), el de identidad de sitio/contacto (S1–S13) y el de protección
+(P1–P8 — ver más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
+volumen/espera reales.
 
-### OWASP API Security Top 10 — cobertura tras la Fase 10
+### OWASP API Security Top 10 — cobertura tras la Fase 11
 
 | # | Categoría | Estado |
 |---|---|---|
 | API1 — IDOR | ✅ Probado: `/users/:id`, `/roles/:id` por jerarquía; **álbumes e imágenes privadas** filtran por dueño (otro usuario → 404/403); `/media/:key` privado exige firma HMAC. |
 | API2 — Broken Authentication | ✅ Probado: anti-enumeración (`login/step1` idéntico), challenge token de 2FA nunca es sesión (401 en `/auth/me`), logout revoca el refresh en BD, reuso de refresh → cascada, JWT `HS256` fijo. |
 | API3 — Mass Assignment | ✅ Probado: propiedad extra en el body (`role_id` en registro; `is_read`/`messageId` en `POST /contact`) → 400 por `forbidNonWhitelisted`. |
-| API4 — Unrestricted Resource Consumption | ✅ Probado: fuerza bruta login/2FA → 429; **subida**: `limits.fileSize` → 413, `limitInputPixels` → 400, rate limit 120/h por usuario; **`POST /contact`** con `@Throttle(5/min)` → 429 en la ráfaga; `message` > 4000 → 400. |
-| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site` y `GET/PATCH/DELETE /contact/messages`**: sin sesión → 401, `usuario` → 403, `admin`+ → 200. |
+| API4 — Unrestricted Resource Consumption | ✅ Probado: fuerza bruta login/2FA → 429; **subida**: `limits.fileSize` → 413, `limitInputPixels` → 400, rate limit 120/h por usuario; **`POST /contact`** con `@Throttle(5/min)` → 429 en la ráfaga; `message` > 4000 → 400; **`POST /site/watermark`** con tope de 5 MB propio; **`POST /site/watermark/regenerate`** corre en segundo plano y una segunda llamada mientras hay una en curso no relanza el trabajo (evita apilar N regeneraciones simultáneas — ver P8). |
+| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site`, `POST/DELETE /site/watermark`, `POST/GET /site/watermark/regenerate` y `GET/PATCH/DELETE /contact/messages`**: sin sesión → 401, `usuario` → 403, `admin`+ → 200/201/202. |
 | API6 — Sensitive Business Flows | ✅ Parcial: registro y login limitados por el mismo mecanismo de API4. |
 | API7 — SSRF | No aplica todavía (sin "importar imagen por URL" ni OAuth). |
 | API8 — Security Misconfiguration | ✅ helmet, CORS explícito, Swagger solo dev, secretos fuera de git; cabeceras de seguridad del frontend (CSP env-aware, `X-Frame-Options`, HSTS en prod) — Fase 10 hardening. |
@@ -119,6 +120,33 @@ F7/F10 con volumen/espera reales.
 | F14 | Ruta de storage adivinable | `storage_key` = `randomUUID()` + extensión canónica; nada derivado del cliente | ✅ Cubierto por diseño |
 | F15 | Cabecera de incrustación | `GET /media/:key` marca `Cross-Origin-Resource-Policy: cross-origin` (helmet pone `same-origin` por defecto, que rompía el `<img>` del frontend en dev — otro puerto). Es contenido público pensado para CDN; el control de los privados sigue siendo la firma HMAC de la URL, no CORP. Las respuestas JSON de la API **conservan** `same-origin`. | ✅ Probado 2026-09-02 |
 | F16 | Fuga de fotos no publicadas (Fase 10b) | Una imagen `draft` / `archived` **nunca** aparece en `GET /g/:slug` ni en `GET /galleries` (ni con enlace de compartir válido); su clave de media no se entrega en ninguna respuesta pública, así que tampoco es alcanzable por `/media/:key` salvo que ya se conociera. El gestor (`GET /albums/:id/images`, autenticado, dueño/admin) sí las ve. `POST /albums/:id/images/status` valida que todos los ids sean del álbum (400 si no). | ✅ Probado 2026-09-03 (archivar 4 fotos → desaparecen de `/g` y del índice; id ajeno → 400) |
+| F17 | Ejecución de comandos vía `exiftool` (Fase 11) | `RightsMetadataService` usa `execFile` (nunca `exec`/una shell) con una lista **fija** de etiquetas — el valor de cada campo es el único dato del usuario, nunca el nombre de la etiqueta ni el binario a correr; no hay forma de inyectar un flag o un comando distinto por más rara que sea la cadena. Se sanean saltos de línea/caracteres de control antes de pasarlos. | ✅ Probado 2026-09-04 (`rightsStatement` con `\n` y un `-fake-flag` incrustado → se guarda como una sola línea, exiftool no lo interpreta como argumento aparte) |
+| F18 | Logo de marca de agua falsificado | `POST /site/watermark` valida por **contenido real** con `sharp` (igual que las fotos) antes de guardar — un archivo que no decodifica como imagen → 400, nunca se guarda | ✅ Probado 2026-09-04 (texto plano subido como PNG → 400) |
+| F19 | Original de alta resolución servido en público | Los derivados públicos llevan marca de agua; el original **nunca** se compone con la marca (D9) — sigue detrás del mismo control de acceso que ya existía (URL pública sin firma mostrando el archivo re-codificado, pero con la marca ausente solo si se pide expresamente por licencia). Ver P1–P8 para el detalle completo de la capa de protección. | ✅ Cubierto por diseño — cruzado con P1–P5 |
+
+---
+
+## Bloque específico — Protección de la obra (`/site/watermark*`, metadatos de derechos — Fase 11)
+
+Reproducible con `verify-fase11.mjs` (script de verificación, corrido dentro del contenedor backend
+por tener `exiftool` disponible ahí; no forma parte del repo — ver la nota al final de esta sección).
+
+| # | Prueba | Qué valida | Estado |
+|---|---|---|---|
+| P1 | Metadatos de derechos en el original **público** | `GET` del original de una foto publicada → `exiftool` confirma `XMP-dc:Rights`, `XMP-dc:Creator`, `IPTC:CopyrightNotice` con el valor configurado | ✅ Probado 2026-09-04 |
+| P2 | Metadatos de derechos en el original **privado** (protección universal) | Una foto de álbum `private` **también** lleva los mismos metadatos — D10 no distingue por visibilidad, solo la marca visible sí (P4) | ✅ Probado 2026-09-04 |
+| P3 | Nunca se reintroducen GPS/serie | El pipeline sigue quitando TODO el EXIF original antes de re-codificar (Fase 3); `exiftool` solo **añade** las etiquetas de derechos de una lista fija, nunca copia del archivo de origen | ✅ Cubierto por diseño — mismo mecanismo que F11 |
+| P4 | Marca de agua solo en derivados de álbumes `public` | El derivado `small` de un álbum público difiere (en bytes) de un derivado idéntico regenerado sin marca; el de un álbum `private` es indistinguible del control (no se estampa) | ✅ Probado 2026-09-04 |
+| P5 | Marca de agua funciona en **todos** los tamaños de derivado | Regresión encontrada y corregida en desarrollo: un mosaico de marca fijo (320 px) rompía la composición en el derivado `thumb` (240 px o menos) porque `sharp` exige que lo compuesto quepa dentro de la imagen base — el estampado fallaba en silencio y el `thumb` se servía **sin marcar**. Se corrigió acotando el mosaico al lado más chico de cada derivado. | ✅ Probado 2026-09-04 (test de regresión en `watermark.service.spec.ts` con una imagen de 96×70) |
+| P6 | `POST /site/watermark` — validación | Contenido no-imagen → 400; el logo se re-codifica a PNG (nunca se guarda el archivo crudo del cliente) | ✅ Probado 2026-09-04 |
+| P7 | RBAC de `/site/watermark*` | Sin sesión → 401; `usuario` → 403; `admin`+ → 2xx, en subir, borrar y regenerar | ✅ Probado 2026-09-04 |
+| P8 | Regeneración no se puede duplicar / no cuelga la API | `POST /site/watermark/regenerate` responde **202 de inmediato** y corre en segundo plano (con ~250 imágenes tarda varios minutos — verificado que una llamada **síncrona** agota el tiempo de espera del cliente HTTP, de ahí el rediseño); una segunda llamada mientras hay una corriendo devuelve el mismo `startedAt` en vez de relanzar el trabajo | ✅ Probado 2026-09-04 |
+
+> El script de verificación (`tmp-verify-fase11.mjs`) se escribió y corrió dentro del contenedor
+> backend durante el desarrollo — no se dejó en el repo porque, a diferencia de
+> `scripts/probe-fase10.mjs`, necesita `exiftool` (solo está instalado en la imagen del backend, no
+> en el host) y tarda varios minutos por la regeneración real. El detalle de cada prueba queda
+> documentado aquí y en `DOCUMENTO_VIVO_ARQUITECTURA.md` §14.
 
 ---
 

@@ -63,6 +63,19 @@ const SITE = {
     'Encargos editoriales, retrato de oficio y cobertura de eventos culturales. Cuéntame qué ' +
     'tienes en mente y para cuándo.',
   instagram: '@marasolis.foto',
+
+  // ── Marca de agua y derechos (Fase 11) — se aplican a cada foto que se sube ──
+  watermarkText: '© Mara Solís',
+  watermarkOpacity: 0.4,
+  watermarkPlacement: 'tiled',
+  rightsHolder: 'Mara Solís',
+  creator: 'Mara Solís',
+  creditLine: 'Fotografía: Mara Solís / Estudio Mara Solís',
+  rightsStatement: '© Mara Solís. Todos los derechos reservados.',
+  defaultLicenseTerms:
+    'Uso editorial de una sola publicación, con crédito visible «Fotografía: Mara Solís». ' +
+    'Para uso comercial o reproducción múltiple, contactar para licencia ampliada.',
+  licensorUrl: 'https://marasolis.mx',
 };
 
 /** Tema base común a todas las colecciones — solo cambia el acento. */

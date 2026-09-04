@@ -110,25 +110,45 @@ export class ImagePipelineService {
 
     const variants: ProcessedVariant[] = [];
     for (const spec of VARIANT_WIDTHS) {
-      const buffer = await sharp(originalBuffer)
-        .resize({ width: spec.width, withoutEnlargement: true })
-        .webp({ quality: 82 })
-        .toBuffer();
-      const meta = await sharp(buffer).metadata();
-      variants.push({
-        label: spec.label,
-        format: 'webp',
-        buffer,
-        width: meta.width ?? spec.width,
-        height: meta.height ?? 0,
-        bytes: buffer.byteLength,
-      });
+      variants.push(await this.buildVariant(originalBuffer, spec.label));
     }
 
     return {
       original,
       variants,
       placeholder: await this.buildBlurhash(originalBuffer),
+    };
+  }
+
+  /**
+   * Genera un único derivado a partir del original ya normalizado — el mismo
+   * paso que usa `process()` en el bucle, expuesto aparte para la
+   * **regeneración** (Fase 11: al cambiar la marca de agua hay que rehacer
+   * los derivados de las colecciones públicas desde su original limpio, sin
+   * volver a validar/re-subir el archivo entero).
+   *
+   * @param originalBuffer - El original ya re-codificado (sin EXIF).
+   * @param label - Una de las etiquetas conocidas (`thumb`/`small`/`medium`/`large`).
+   * @returns El derivado WebP correspondiente.
+   * @throws Error si `label` no es una de las conocidas.
+   */
+  async buildVariant(originalBuffer: Buffer, label: string): Promise<ProcessedVariant> {
+    const spec = VARIANT_WIDTHS.find((v) => v.label === label);
+    if (!spec) {
+      throw new Error(`Etiqueta de derivado desconocida: ${label}`);
+    }
+    const buffer = await sharp(originalBuffer)
+      .resize({ width: spec.width, withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    const meta = await sharp(buffer).metadata();
+    return {
+      label: spec.label,
+      format: 'webp',
+      buffer,
+      width: meta.width ?? spec.width,
+      height: meta.height ?? 0,
+      bytes: buffer.byteLength,
     };
   }
 

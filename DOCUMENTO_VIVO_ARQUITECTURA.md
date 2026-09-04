@@ -1286,3 +1286,111 @@ foto publicada.
 - `/`, `/trabajo`, `/sobre`, `/g/<slug>`, `/studio/<id>` → 200. `next build` (prod) OK.
   `tsc` backend OK. **53 tests / 11 suites** (nuevo `images.service.spec.ts`; `site.service.spec.ts`
   ampliado para el hero publicado).
+
+## 14. Fase 11 — Protección de la obra (completada y verificada, 2026-09-04)
+
+"El fotógrafo deja de regalar sus fotos": marca de agua estampada por el servidor en todo lo
+público, y un registro de derechos incrustado como metadatos IPTC/XMP reales en **cada** archivo
+servido (público o privado). Diseño previo en §12.3/§12.4; esto es lo que quedó construido.
+
+### 14.1 Modelo de datos
+
+Migración `20260904142447_protection`:
+
+- `images.rights` (`JSONB`, nullable) — override de derechos de esa imagen; `null` = hereda todo.
+- `site_settings` gana: `watermark_asset_key`, `watermark_text`, `watermark_opacity`,
+  `watermark_placement` (D9); `rights_holder`, `creator`, `credit_line`, `rights_statement`,
+  `default_license_terms`, `licensor_url` (D10).
+
+### 14.2 `src/protection/` — dos servicios, sin controller propio
+
+| Servicio | Qué hace |
+|---|---|
+| `WatermarkService.composite()` | Estampa un derivado WebP con el logo o el texto configurado. El mosaico (`tile`) o el sello (`corner`) se rasteriza vía SVG con `sharp`/librsvg — el mismo mecanismo que ya usaba `seed-demo.ts` para el texto. |
+| `RightsMetadataService.embed()` | Incrusta IPTC/XMP con `exiftool` (`execFile`, lista fija de etiquetas — ver F17). |
+| `rights.util.ts` | `sanitizeRightsPartial` (proyecta a las 6 claves conocidas, trunca) + `resolveRights` (override de la imagen → default del sitio, campo por campo). Puras, sin DI — testeadas aparte. |
+
+`ProtectionModule` las exporta; lo importan `ImagesModule` (para estampar/embeber al subir) y
+`SiteModule` (para la configuración, la subida del logo y la regeneración).
+
+### 14.3 Dónde se aplica
+
+- **`ImagesService.upload()`**: tras `pipeline.process()` —
+  1. Deriva los derechos efectivos (`resolveRights(defaults, null)` — la imagen aún no existe).
+  2. Embebe derechos en el **original** (nunca lleva marca — D9).
+  3. Por cada derivado: si `album.visibility === 'public'` → `watermark.composite()`; siempre →
+     `metadata.embed()`. Se guarda el resultado, no el derivado crudo.
+- **`SiteService.uploadWatermarkAsset()`**: `POST /site/watermark` (multipart) — valida por
+  contenido con `sharp` (igual que una foto), re-codifica a PNG ≤ 1000×1000, la sube con
+  `StorageService.put()` y borra la anterior. `DELETE /site/watermark` la quita (cae al texto).
+- **`SiteService.startWatermarkRegeneration()` / `regenerate()`** — ver 14.5.
+
+### 14.4 Hallazgo real: el mosaico fijo rompía el `thumb`
+
+`sharp` exige que lo que se compone (`composite()`) **quepa dentro** de la imagen base. Un mosaico
+fijo de 320 px fallaba al estampar el derivado `thumb` (240 px o menos de lado) — el `catch` de
+`WatermarkService.composite()` lo capturaba en silencio y devolvía el derivado **sin marcar**. Un
+test de regresión (`watermark.service.spec.ts`, imagen 96×70) lo detectó antes de llegar a
+producción. Arreglo: el mosaico se acota al lado más chico del derivado en cada llamada
+(`Math.min(MAX_TILE, width, height)`), nunca un tamaño fijo.
+
+### 14.5 Hallazgo real: la regeneración síncrona agota el tiempo de espera HTTP
+
+`POST /site/watermark/regenerate` original era síncrono: recorría todas las imágenes de álbumes
+`public` (original + 4 derivados cada una, cada archivo pasando por `sharp` **y** un proceso
+`exiftool` aparte). Con las ~250 fotos de la demo, la llamada **superó los 5 minutos** y el cliente
+HTTP cortó la conexión (`UND_ERR_HEADERS_TIMEOUT`) antes de que terminara — verificado en desarrollo,
+no una hipótesis.
+
+Rediseño: `startWatermarkRegeneration()` responde **202 de inmediato** y lanza el trabajo real
+(`runRegeneration()`) sin esperarlo (`void this.runRegeneration()`); el progreso vive en un campo
+**en memoria del proceso** (`regenState`) y se consulta con `GET /site/watermark/regenerate`. Una
+segunda llamada mientras hay una corriendo no relanza el trabajo — devuelve el estado en curso.
+
+> **Por qué no Redis para el estado del trabajo**: `RedisService` está documentado explícitamente
+> como "nunca almacén de datos de negocio" (solo rate limiting / fuerza bruta). El estado en memoria
+> es aceptable aquí: un solo proceso backend, y perder el progreso en un reinicio a mitad de una
+> regeneración no es grave — se puede volver a lanzar. Con más de una instancia del backend, esto
+> tendría que moverse a un job real (BullMQ u otra cola) — anotado como evolución futura, no se
+> construye ahora.
+
+### 14.6 Límite conocido: `storage.read()` solo funciona con el driver de disco
+
+La regeneración necesita releer el **original limpio** para reconstruir los derivados. Eso pasa por
+`StorageService.read()`, que **solo** implementa el driver de disco — `CloudinaryStorageDriver` no
+tiene `read()` (Cloudinary sirve desde su propio CDN, nunca a través del backend). En producción
+(`STORAGE_DRIVER=cloudinary`), cada imagen se cuenta como `skipped` en vez de procesarse. Evolución
+futura si hace falta: bajar el original por HTTPS desde su URL de Cloudinary antes de reprocesar.
+No se implementa ahora — se documenta con honestidad en vez de simularlo.
+
+### 14.7 Frontend
+
+- `/studio/ajustes`: sección **"Marca de agua"** (subir/quitar el logo con vista previa, texto de
+  respaldo, opacidad, patrón, botón "Aplicar a todo lo publicado" con sondeo del progreso cada 3 s)
+  y **"Derechos por defecto"** (los 6 campos).
+- `/studio/[albumId]`: cada tarjeta gana un enlace "Derechos ▾" que despliega un editor de los 6
+  campos de esa imagen — el backend reemplaza el JSON completo, así que el frontend siempre manda
+  el borrador entero (nunca un campo suelto).
+- `GalleryImage` y `Lightbox`: `draggable={false}` + `onDragStart`/`onContextMenu` con
+  `preventDefault()` — **disuasores**, documentados como tales (el control real es que el archivo
+  servido ya lleva marca y metadatos).
+- `Lightbox` y `SiteFooter` muestran `site.rights.noticeText` (el aviso de derechos ya resuelto).
+
+### 14.8 Verificación real
+
+- Original de una foto **pública**: `exiftool` confirma `XMP-dc:Rights`, `XMP-dc:Creator`,
+  `IPTC:CopyrightNotice` con los valores configurados.
+- Original de una foto **privada**: también lleva los mismos metadatos (D10 no distingue por
+  visibilidad — solo la marca visible sí distingue).
+- Derivado `small` de un álbum público difiere en bytes del mismo derivado regenerado sin marca; el
+  de un álbum privado es indistinguible del control (no se estampa).
+- `rightsStatement` con saltos de línea y un `-fake-flag` incrustado → se guarda como una línea,
+  `exiftool` no lo trata como un argumento aparte.
+- `POST /site/watermark` con texto plano disfrazado de PNG → 400.
+- RBAC de `/site/watermark*` (subir, borrar, regenerar, consultar estado): 401/403/2xx correctos.
+- Regeneración real contra las ~250 fotos de la demo: arranca en `running`, una segunda llamada no
+  la relanza, termina en `done` con el conteo real de procesadas.
+- `tsc` OK. `next build` (prod) OK, 15 rutas. **79 tests / 14 suites** (nuevas:
+  `rights.util.spec.ts`, `watermark.service.spec.ts` — incluye el test de regresión del mosaico —,
+  `rights-metadata.service.spec.ts` de integración con `exiftool` real; `site.service.spec.ts`
+  ampliado con el estado de la regeneración en segundo plano).

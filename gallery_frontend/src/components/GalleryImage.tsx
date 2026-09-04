@@ -81,6 +81,12 @@ export function GalleryImage({
         decoding="async"
         onLoad={() => setLoaded(true)}
         data-loaded={loaded}
+        draggable={false}
+        // Disuasor de copia, no control de acceso real: el archivo que se
+        // sirve aquí ya lleva marca de agua y metadatos de derechos
+        // incrustados (Fase 11) — eso es lo que protege de verdad.
+        onDragStart={(event) => event.preventDefault()}
+        onContextMenu={(event) => event.preventDefault()}
       />
       {image.caption ? (
         <figcaption className="g-caption">{image.caption}</figcaption>

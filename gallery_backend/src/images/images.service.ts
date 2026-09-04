@@ -7,11 +7,17 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { basename } from 'node:path';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AlbumsService } from '../albums/albums.service';
 import { ImagePipelineService } from '../media-processing/image-pipeline.service';
+import type { EmbeddableFormat } from '../protection/rights-metadata.service';
+import { RightsMetadataService } from '../protection/rights-metadata.service';
+import { resolveRights, sanitizeRightsPartial } from '../protection/rights.util';
+import { WatermarkService } from '../protection/watermark.service';
+import { SiteService } from '../site/site.service';
 import { StorageService } from '../storage/storage.service';
 import type { MediaVisibility } from '../storage/storage-driver.interface';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface';
@@ -53,6 +59,9 @@ export class ImagesService {
     private readonly pipeline: ImagePipelineService,
     private readonly redis: RedisService,
     private readonly albums: AlbumsService,
+    private readonly watermark: WatermarkService,
+    private readonly metadata: RightsMetadataService,
+    private readonly site: SiteService,
   ) {}
 
   /**
@@ -91,9 +100,25 @@ export class ImagesService {
 
     const processed = await this.pipeline.process(file.buffer);
 
+    // Fase 11 — protección: se resuelve una vez por subida.
+    // (1) Derechos: la imagen aún no existe, así que no tiene override propio
+    //     todavía — hereda por completo los defaults del sitio.
+    // (2) Marca de agua: solo para colecciones `public` — D9.
+    const rights = resolveRights(await this.site.getRightsDefaults(), null);
+    const originalFormat: EmbeddableFormat =
+      processed.original.extension === 'png' ? 'png' : 'jpeg';
+    const watermarkConfig =
+      visibility === 'public' ? await this.site.getWatermarkConfig() : null;
+
     const storedKeys: string[] = [];
     try {
-      const originalStored = await this.storage.put(processed.original.buffer, {
+      // El original nunca lleva marca (D9); sí lleva los derechos incrustados.
+      const originalWithRights = await this.metadata.embed(
+        processed.original.buffer,
+        originalFormat,
+        rights,
+      );
+      const originalStored = await this.storage.put(originalWithRights, {
         extension: processed.original.extension,
         contentType: processed.original.contentType,
         visibility,
@@ -109,7 +134,11 @@ export class ImagesService {
         bytes: number;
       }[] = [];
       for (const variant of processed.variants) {
-        const stored = await this.storage.put(variant.buffer, {
+        const marked = watermarkConfig
+          ? await this.watermark.composite(variant.buffer, watermarkConfig)
+          : variant.buffer;
+        const withRights = await this.metadata.embed(marked, 'webp', rights);
+        const stored = await this.storage.put(withRights, {
           extension: 'webp',
           contentType: 'image/webp',
           visibility,
@@ -121,7 +150,7 @@ export class ImagesService {
           format: variant.format,
           width: variant.width,
           height: variant.height,
-          bytes: variant.bytes,
+          bytes: withRights.byteLength,
         });
       }
 
@@ -185,7 +214,14 @@ export class ImagesService {
     return images.map((image) => this.toDto(image, image.variants, visibility));
   }
 
-  /** Edita alt / caption / orden / estado de curación de una imagen. */
+  /**
+   * Edita alt / caption / orden / estado de curación / derechos de una imagen.
+   *
+   * El registro de derechos (`dto.rights`) solo se **guarda** — para que el
+   * cambio se refleje en los archivos ya servidos hace falta
+   * `POST /site/watermark/regenerate` (Fase 11); una subida nueva siempre usa
+   * lo vigente en el momento de subirla.
+   */
   async update(imageId: string, actor: AuthenticatedUser, dto: UpdateImageDto) {
     const { image, visibility } = await this.loadManageable(imageId, actor);
     const updated = await this.prisma.images.update({
@@ -195,6 +231,14 @@ export class ImagesService {
         ...(dto.caption !== undefined ? { caption: dto.caption } : {}),
         ...(dto.sortOrder !== undefined ? { sort_order: dto.sortOrder } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.rights !== undefined
+          ? {
+              rights:
+                dto.rights === null
+                  ? Prisma.JsonNull
+                  : (sanitizeRightsPartial(dto.rights) as Prisma.InputJsonValue),
+            }
+          : {}),
       },
       include: { variants: true },
     });
@@ -331,6 +375,7 @@ export class ImagesService {
       caption: string | null;
       sort_order: number;
       status: string;
+      rights: Prisma.JsonValue;
       created_at: Date;
     },
     variants: { label: string; format: string; storage_key: string; width: number; height: number }[],
@@ -349,6 +394,7 @@ export class ImagesService {
       caption: image.caption,
       sortOrder: image.sort_order,
       status: image.status,
+      rights: sanitizeRightsPartial(image.rights),
       createdAt: image.created_at,
       urls: {
         original: this.storage.urlFor(image.storage_key, visibility),

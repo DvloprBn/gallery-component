@@ -1,10 +1,17 @@
 import {
+  IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
+
+/** Patrones válidos de marca de agua. */
+export const WATERMARK_PLACEMENTS = ['tiled', 'corner'] as const;
 
 /** `PATCH /site` — ajustes de identidad del sitio. Todo opcional (se hace merge). */
 export class UpdateSiteDto {
@@ -53,4 +60,54 @@ export class UpdateSiteDto {
   @ValidateIf((_, value) => value !== null)
   @IsUUID()
   heroImageId?: string | null;
+
+  // ── Marca de agua (Fase 11, D9) ──
+
+  /** Texto de respaldo si no hay logo subido (la subida va por `POST /site/watermark`). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  watermarkText?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.05)
+  @Max(0.9)
+  watermarkOpacity?: number;
+
+  @IsOptional()
+  @IsIn(WATERMARK_PLACEMENTS)
+  watermarkPlacement?: (typeof WATERMARK_PLACEMENTS)[number];
+
+  // ── Derechos por defecto (Fase 11, D10) ──
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  rightsHolder?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  creator?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  creditLine?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  rightsStatement?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  defaultLicenseTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  licensorUrl?: string;
 }

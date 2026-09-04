@@ -15,9 +15,20 @@ import {
   IMAGE_STATUS_LABEL,
   type AlbumRow,
   type ImageDto,
+  type ImageRights,
   type ImageStatus,
   type ShareTokenRow,
 } from '@/lib/studio-types';
+
+/** Los seis campos de derechos, siempre juntos (el backend reemplaza el JSON completo). */
+const RIGHTS_FIELDS: { key: keyof ImageRights; label: string }[] = [
+  { key: 'rightsHolder', label: 'Titular' },
+  { key: 'creator', label: 'Autor' },
+  { key: 'creditLine', label: 'Crédito' },
+  { key: 'rightsStatement', label: 'Aviso de derechos' },
+  { key: 'licenseTerms', label: 'Término de licencia' },
+  { key: 'licensorUrl', label: 'URL del licenciante' },
+];
 
 export default function AlbumManagePage() {
   return (
@@ -191,6 +202,7 @@ function ImageGrid({
   const [order, setOrder] = useState<ImageDto[]>(images);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [rightsOpenId, setRightsOpenId] = useState<string | null>(null);
   const dragFrom = useRef<number | null>(null);
 
   useEffect(() => {
@@ -223,6 +235,28 @@ function ImageGrid({
 
   const updateMeta = async (id: string, patch: { altText?: string; caption?: string }) => {
     await apiFetch(`/images/${id}`, { method: 'PATCH', body: patch });
+  };
+
+  /**
+   * Guarda el registro de derechos de una imagen — el backend reemplaza el
+   * objeto `rights` completo, así que siempre se manda el borrador entero
+   * (nunca un campo suelto, o se perderían los demás).
+   */
+  const saveRights = async (id: string, rights: ImageRights) => {
+    const updated = await apiFetch<ImageDto>(`/images/${id}`, {
+      method: 'PATCH',
+      body: { rights },
+    });
+    setOrder((cur) => cur.map((i) => (i.imageId === id ? updated : i)));
+  };
+
+  /** Borra el override — la imagen vuelve a heredar todo de `site.rights`. */
+  const clearRights = async (id: string) => {
+    const updated = await apiFetch<ImageDto>(`/images/${id}`, {
+      method: 'PATCH',
+      body: { rights: null },
+    });
+    setOrder((cur) => cur.map((i) => (i.imageId === id ? updated : i)));
   };
 
   const setStatus = async (id: string, status: ImageStatus) => {
@@ -363,9 +397,96 @@ function ImageGrid({
                 Borrar
               </button>
             </div>
+            <button
+              type="button"
+              className="link-button"
+              style={{ fontSize: '0.76rem' }}
+              onClick={() =>
+                setRightsOpenId((cur) => (cur === image.imageId ? null : image.imageId))
+              }
+            >
+              Derechos {rightsOpenId === image.imageId ? '▲' : '▾'}
+              {Object.keys(image.rights ?? {}).length > 0 ? ' •' : ''}
+            </button>
+            {rightsOpenId === image.imageId ? (
+              <RightsEditor
+                initial={image.rights ?? {}}
+                onSave={(r) => saveRights(image.imageId, r)}
+                onClear={() => clearRights(image.imageId)}
+              />
+            ) : null}
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+/**
+ * Editor del registro de derechos de UNA imagen (Fase 11, D10) — solo los
+ * campos que se quieran sobreescribir sobre los del sitio; los vacíos
+ * heredan. Se guarda como un objeto completo (nunca campo por campo).
+ */
+function RightsEditor({
+  initial,
+  onSave,
+  onClear,
+}: {
+  initial: ImageRights;
+  onSave: (rights: ImageRights) => Promise<void>;
+  onClear: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<ImageRights>(initial);
+  const [busy, setBusy] = useState(false);
+  const hasOverride = Object.values(initial).some((v) => v);
+
+  return (
+    <div className="img-rights">
+      <p className="hint">Vacío = hereda el valor por defecto del sitio.</p>
+      {RIGHTS_FIELDS.map(({ key, label }) => (
+        <input
+          key={key}
+          className="img-meta"
+          placeholder={label}
+          value={draft[key] ?? ''}
+          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+        />
+      ))}
+      <div className="img-actions">
+        <button
+          type="button"
+          className="link-button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onSave(draft);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Guardar derechos
+        </button>
+        {hasOverride ? (
+          <button
+            type="button"
+            className="link-button danger"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onClear();
+                setDraft({});
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Restablecer
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

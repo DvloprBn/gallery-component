@@ -1631,3 +1631,21 @@ button.danger:not(.link-button):hover:not(:disabled) {
 .img-card select.img-meta {
   cursor: pointer;
 }
+
+/* Editor de derechos por imagen (gestor, Fase 11) */
+.img-rights {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+
+/* Aviso de derechos en el lightbox (Fase 11) */
+.g-lightbox-rights {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+}

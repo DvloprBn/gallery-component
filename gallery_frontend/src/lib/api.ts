@@ -83,6 +83,27 @@ export interface SiteHero {
   urls: Record<string, string>;
 }
 
+/** Configuración de marca de agua (Fase 11). */
+export interface SiteWatermark {
+  hasAsset: boolean;
+  previewUrl: string | null;
+  text: string;
+  opacity: number;
+  placement: 'tiled' | 'corner';
+}
+
+/** Registro de derechos por defecto del sitio (Fase 11, D10). */
+export interface SiteRights {
+  rightsHolder: string;
+  creator: string;
+  creditLine: string;
+  rightsStatement: string;
+  licenseTerms: string;
+  licensorUrl: string;
+  /** El aviso ya resuelto (con su fallback) — listo para el pie/lightbox. */
+  noticeText: string;
+}
+
 /** Identidad pública del sitio (portafolio): la devuelve `GET /site`. */
 export interface Site {
   siteTitle: string;
@@ -94,6 +115,8 @@ export interface Site {
   contactIntro: string;
   instagram: string;
   hero: SiteHero | null;
+  watermark: SiteWatermark;
+  rights: SiteRights;
 }
 
 /**

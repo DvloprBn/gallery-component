@@ -4,11 +4,13 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 /** Estados de curación de una imagen. */
@@ -36,6 +38,18 @@ export class UpdateImageDto {
   @IsOptional()
   @IsIn(IMAGE_STATUSES)
   status?: ImageStatus;
+
+  /**
+   * Registro de derechos de ESTA imagen (Fase 11, D10) — solo los campos que
+   * se quieran sobreescribir sobre los de `site_settings`; se sanea a la
+   * lista de claves conocidas en el service (`sanitizeRightsPartial`), nunca
+   * se guarda el objeto crudo. `null` limpia el override (vuelve a heredar
+   * todo del sitio).
+   */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsObject()
+  rights?: Record<string, unknown> | null;
 }
 
 /** `POST /albums/:id/images/reorder` — el orden nuevo, como lista de IDs. */

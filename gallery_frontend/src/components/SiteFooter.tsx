@@ -40,8 +40,8 @@ export function SiteFooter() {
         </nav>
       </div>
       <p className="site-footer__note">
-        © {year} {site.ownerName || 'Estudio'}. Pieza de demostración del
-        portafolio — personas, marcas y encargos son ficticios.
+        {site.rights.noticeText || `© ${year} ${site.ownerName || 'Estudio'}.`} Pieza de
+        demostración del portafolio — personas, marcas y encargos son ficticios.
       </p>
     </footer>
   );

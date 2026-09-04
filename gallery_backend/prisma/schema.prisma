@@ -177,6 +177,11 @@ model images {
   // (en preparación) | 'published' (visible en la galería pública). Las subidas
   // nuevas entran como 'draft' — se sube en ancho y se cura después.
   status          String   @default("draft") @db.VarChar(16)
+  // Registro de derechos de ESTA imagen (Fase 11). `null` = hereda por
+  // completo los valores por defecto de `site_settings`. Forma:
+  // { rightsHolder?, creator?, creditLine?, rightsStatement?, licenseTerms?, licensorUrl? }.
+  // Es lo que se incrusta como IPTC/XMP en cada archivo servido de esta imagen.
+  rights          Json?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
   album    albums          @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
@@ -237,6 +242,27 @@ model site_settings {
   contact_intro  String   @default("") @db.VarChar(600)
   instagram      String   @default("") @db.VarChar(200)
   hero_image_id  String?  @db.Uuid // imagen a sangre completa de la portada
+
+  // ── Marca de agua (Fase 11, D9) — obligatoria en todo lo `public` ──
+  // Clave de almacenamiento del PNG subido por el gestor; null = usar texto.
+  watermark_asset_key String  @default("") @db.VarChar(255)
+  // Texto de respaldo si no hay PNG subido (si también está vacío, se usa
+  // "© {owner_name}" calculado en tiempo de estampado).
+  watermark_text       String  @default("") @db.VarChar(120)
+  watermark_opacity    Float   @default(0.35)
+  // 'tiled' (patrón diagonal repetido) | 'corner' (una sola vez, esquina).
+  watermark_placement  String  @default("tiled") @db.VarChar(16)
+
+  // ── Registro de derechos por defecto (Fase 11, D10) ──
+  // Se incrusta como IPTC/XMP en cada archivo servido; una imagen puede
+  // sobreescribir cualquier campo en `images.rights`.
+  rights_holder          String @default("") @db.VarChar(160)
+  creator                String @default("") @db.VarChar(160)
+  credit_line            String @default("") @db.VarChar(200)
+  rights_statement       String @default("") @db.VarChar(400)
+  default_license_terms  String @default("") @db.VarChar(400)
+  licensor_url           String @default("") @db.VarChar(300)
+
   updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 

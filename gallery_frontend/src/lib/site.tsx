@@ -29,6 +29,22 @@ const FALLBACK: Site = {
   contactIntro: '',
   instagram: '',
   hero: null,
+  watermark: {
+    hasAsset: false,
+    previewUrl: null,
+    text: '',
+    opacity: 0.35,
+    placement: 'tiled',
+  },
+  rights: {
+    rightsHolder: '',
+    creator: '',
+    creditLine: '',
+    rightsStatement: '',
+    licenseTerms: '',
+    licensorUrl: '',
+    noticeText: '',
+  },
 };
 
 /**

@@ -36,10 +36,11 @@ RUN npm prune --omit=dev
 FROM node:22-bookworm-slim AS runtime
 
 # openssl -> motor de Prisma en runtime.
-# fontconfig + fuente -> rasterizado de texto SVG (solo lo usa el seed de demo).
+# fontconfig + fuente -> rasterizado de texto SVG (seed de demo + marca de agua).
+# libimage-exiftool-perl -> embebe IPTC/XMP de derechos (Fase 11).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       openssl ca-certificates fontconfig fonts-dejavu-core \
+       openssl ca-certificates fontconfig fonts-dejavu-core libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

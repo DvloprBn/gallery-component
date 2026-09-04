@@ -28,6 +28,19 @@ export const IMAGE_STATUS_LABEL: Record<ImageStatus, string> = {
   archived: 'Archivada',
 };
 
+/**
+ * Registro de derechos propio de una imagen (Fase 11, D10) — solo los campos
+ * que sobreescriben los del sitio; lo que falte hereda de `site.rights`.
+ */
+export interface ImageRights {
+  rightsHolder?: string;
+  creator?: string;
+  creditLine?: string;
+  rightsStatement?: string;
+  licenseTerms?: string;
+  licensorUrl?: string;
+}
+
 /** Imagen tal como la devuelven `POST /albums/:id/images` y `GET /albums/:id/images`. */
 export interface ImageDto {
   imageId: string;
@@ -43,6 +56,8 @@ export interface ImageDto {
   sortOrder: number;
   /** Curación: solo las `published` se ven en la galería pública. */
   status: ImageStatus;
+  /** Override de derechos de esta imagen (vacío = hereda todo del sitio). */
+  rights: ImageRights;
   createdAt: string;
   urls: Record<string, string>;
 }

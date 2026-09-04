@@ -9,7 +9,44 @@
 
 ## 1. Dónde estamos
 
-**Todas las fases + pulido + endurecimiento + reencuadre como portafolio completos (2026-09-02).**
+**Todas las fases + pulido + endurecimiento + reencuadre + protección completos (2026-09-04).**
+
+**Fase 11 — protección de la obra (2026-09-04).** "El fotógrafo deja de regalar sus fotos": marca de
+agua estampada por el servidor en todo lo público + registro de derechos incrustado como IPTC/XMP en
+cada archivo servido (público o privado).
+
+- **Backend** (migración `20260904142447_protection`): `images.rights` (JSON, override por imagen);
+  `site_settings` gana campos de marca de agua (`watermark_asset_key`/`text`/`opacity`/`placement`)
+  y de derechos por defecto (`rights_holder`/`creator`/`credit_line`/`rights_statement`/
+  `default_license_terms`/`licensor_url`). `src/protection/` nuevo: `WatermarkService` (compone vía
+  SVG rasterizado con `sharp`), `RightsMetadataService` (embebe con `exiftool` real, `execFile`,
+  lista fija de etiquetas), `rights.util.ts` (saneo + resolución con herencia). `ImagesService.upload()`
+  estampa (solo `public`) y embebe derechos (siempre) en el original y los 4 derivados.
+  `POST/DELETE /site/watermark` (subir/quitar el logo); `POST /site/watermark/regenerate` +
+  `GET` del mismo — **regeneración en segundo plano** (ver hallazgo abajo).
+- **Frontend**: `/studio/ajustes` gana "Marca de agua" (subir logo, texto, opacidad, patrón,
+  regenerar con progreso) y "Derechos por defecto"; `/studio/[albumId]` gana un editor de derechos
+  por imagen (colapsable); `GalleryImage`/`Lightbox` con disuasores de copia (`draggable=false` +
+  bloqueo de arrastre/clic-derecho, documentados como disuasores, no control real);
+  `Lightbox`/`SiteFooter` muestran el aviso de derechos resuelto.
+- **Hallazgo real (bug, corregido antes de producción)**: el mosaico de la marca de agua era de
+  tamaño fijo (320 px) — `sharp` exige que lo compuesto quepa dentro de la imagen base, así que
+  estampar el derivado `thumb` (240 px) fallaba en silencio y se servía **sin marcar**. Lo detectó
+  un test de regresión antes de llegar a producción. Arreglo: el mosaico se acota al lado más chico
+  de cada derivado.
+- **Hallazgo real (rediseño necesario)**: la regeneración síncrona de ~250 fotos **superó los 5
+  minutos** y el cliente HTTP cortó la conexión (verificado, no hipotético). Se rediseñó como
+  trabajo en segundo plano — `POST` responde 202 de inmediato, progreso consultable con `GET`,
+  estado en memoria del proceso (no Redis — documentado como fuera de su alcance).
+- **Límite conocido, documentado**: la regeneración solo puede releer el original con el driver de
+  **disco**; con Cloudinary (producción) cada imagen se cuenta como omitida — no se simula.
+- **Verificado**: metadatos reales confirmados con `exiftool` en original público y privado; marca
+  de agua presente solo en derivados `public`; inyección de saltos de línea/flags en un campo de
+  derechos → saneada; subir basura como logo → 400; RBAC de los 4 endpoints nuevos correcto;
+  regeneración real sobre ~250 fotos: arranca, no se duplica, termina con conteo correcto.
+  **79 tests / 14 suites**. Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §14.
+
+**Fase 10b — curación (2026-09-03).** Ver más abajo en el historial.
 
 **Fase 10 — reencuadre como portafolio de fotografía (2026-09-02).** El sitio se presenta como el
 portafolio de un autor; el motor de colecciones/personalización no cambia. La sección pública
@@ -249,9 +286,9 @@ Lo que queda, cuando el dueño quiera:
 2. **Enlazar la demo desde el portafolio** `projects/dvlopr-bn`.
 3. Opcional: prev/next entre colecciones en `/g/[slug]`; probar `STORAGE_DRIVER=cloudinary` contra
    la cuenta real; sustituir la "Selección de encargos" fija de `/sobre` por contenido editable.
-4. **Fase 10b hecha.** Sigue la **Fase 11** (protección: formulario de marca de agua + estampado en
-   el pipeline + registro de derechos + embebido IPTC/XMP) → **12** (licenciamiento). La Fase 13
-   (pago Stripe) espera a ≈2026‑09‑17. `CLAUDE.md` "Qué es este proyecto" actualizado al marco nuevo.
+4. **Fase 10b y 11 hechas.** Sigue la **Fase 12** (licenciamiento: solicitud → cotización → entrega
+   firmada de un solo uso). La Fase 13 (pago Stripe) espera a ≈2026‑09‑17. `CLAUDE.md`
+   "Qué es este proyecto" actualizado al marco nuevo.
 
 ---
 
@@ -259,6 +296,7 @@ Lo que queda, cuando el dueño quiera:
 
 | Fecha | Cambio |
 |---|---|
+| 2026-09-04 | **Fase 11 — Protección de la obra (construida).** El dueño pidió "lo más completo y de mayor seguridad" → embebido de metadatos con `exiftool` real (no solo lo básico de `sharp`). Migración `20260904142447_protection`: `images.rights` (JSON); `site_settings` gana campos de marca de agua y de derechos por defecto. `src/protection/`: `WatermarkService` (SVG rasterizado + `sharp().composite`, mosaico `tiled`/`corner`), `RightsMetadataService` (`exiftool` vía `execFile`, lista fija de etiquetas — nunca shell, nunca el nombre de la etiqueta del usuario), `rights.util.ts`. `ImagesService.upload()` estampa (`public`) y embebe derechos (siempre) en el original y los 4 derivados. `POST/DELETE /site/watermark` (subir/quitar logo, valida por contenido real); `POST/GET /site/watermark/regenerate`. **Dockerfile + Dockerfile.dev**: `libimage-exiftool-perl`. **Frontend**: `/studio/ajustes` gana "Marca de agua" y "Derechos por defecto"; `/studio/[albumId]` gana editor de derechos por imagen; `GalleryImage`/`Lightbox` con disuasores de copia; `Lightbox`/`SiteFooter` muestran el aviso de derechos. **Bug real encontrado y corregido por un test de regresión**: el mosaico de la marca era de tamaño fijo (320px) y `sharp` exige que quepa dentro de la imagen base — el `thumb` (240px) fallaba en silencio y se servía sin marcar; se acotó el mosaico al lado más chico de cada derivado. **Rediseño real**: la regeneración síncrona de ~250 fotos superó los 5 minutos y el cliente HTTP cortó la conexión (verificado, no hipotético) → se rediseñó como trabajo en segundo plano (202 + estado consultable, en memoria del proceso — nunca Redis, documentado como fuera de su alcance). **Límite documentado**: la regeneración solo relee el original con el driver de disco; con Cloudinary cada imagen se cuenta como omitida, sin simularlo. **Verificado**: metadatos reales con `exiftool` en original público y privado; marca solo en derivados `public`; saneo de inyección de saltos de línea/flags; logo falso → 400; RBAC de los 4 endpoints; regeneración real sobre ~250 fotos sin duplicarse. **79 tests / 14 suites**. Bloque P1–P8 en `PRUEBAS_SEGURIDAD.md`. Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §14. |
 | 2026-09-03 | **Fase 10b — Curación (construida).** Salió de modo diseño (el dueño confirmó el orden de ejecución). `CLAUDE.md` "Qué es este proyecto" reescrito a los 4 ejes (personalización, animación, **protección**, **licenciamiento/venta**). **Backend**: `images.status` (`published`/`draft`/`archived`, default `draft`, índice `(album_id,status)`), migración `20260903220045_image_status` con backfill a `published`; `PATCH /images/:id` acepta `status`; `POST /albums/:id/images/status` (bloque, valida pertenencia → 400); `MediaService.listPublic`/`getGallery` filtran y cuentan solo `published`, portada cae a la primera publicada; `SiteService.toPublic` y `PATCH /site` exigen hero publicado. **Frontend**: `ImageGrid` del gestor con selector de estado por imagen (optimista), checkbox + barra de acciones en bloque, recuentos en vivo, tarjetas `draft` punteadas y `archived` atenuadas; `ImageDto.status` en `studio-types.ts` + CSS. **Seed**: `seed-portfolio.ts` sube todo (244) y publica una selección repartida (`spread()`): 16/14/15/12/14/10 = ~81; portada = foto publicada. **Verificado**: `POST .../images/status` con id ajeno → 400; archivar 4 de "Calle" → `/g` 89→85, restaurado; seed curado → `/galleries` 6 col / 81 publicadas, gestor de "Calle" ve 89 (16 pub + 73 arch); `/`, `/trabajo`, `/sobre`, `/g/<slug>`, `/studio/<id>` → 200; `next build` prod OK; `tsc` OK; **53 tests / 11 suites** (nuevo `images.service.spec.ts`, `site.service.spec.ts` ampliado). Detalle en `DOCUMENTO_VIVO_ARQUITECTURA.md` §13. |
 | 2026-09-02 | **Decisiones D9–D13 resueltas + diseño técnico del reencuadre.** El dueño cerró las cinco decisiones abiertas: **D9** marca de agua obligatoria en `public`, con **formulario en el gestor para subir el PNG** (+ texto de respaldo), estampada por el servidor en todos los derivados públicos; **D10** — aclarado que "metadatos" = **capturar** un registro de derechos por imagen (titular, autor, crédito, año, aviso, término de licencia, descripción, keywords) **y embeberlo** en IPTC/XMP en cada archivo servido, con el pipeline pasando de "quitar todo el EXIF" a "quitar solo GPS/serie/personal, poner derechos"; **D11** solo licencia digital por ahora (provisional); **D12** Fase 12 sin cobro, **Fase 13 = Stripe modo test tras flag `PAYMENTS_ENABLED`, diferida ≈2026‑09‑17** (hasta tener cuenta Stripe — el proyecto padre `projects/dvlopr-bn` cobrará de verdad y aún **no tiene** claves Stripe; esta demo solo usará claves de prueba, nunca `live` en el repo público); **D13** campo `category` en `albums` con IA plana por ahora. `PLAN_DESARROLLO.md` §4 pasa D9–D13 a "resueltas" con el *por qué* de cada una; §2 y §10 ajustados (formulario de marca de agua, registro de derechos, Fase 13 con fecha). **`DOCUMENTO_VIVO_ARQUITECTURA.md` §12 nueva** — diseño completo sin construir: modelo de datos (`images.status`/`images.rights`, `albums.category`, campos de marca de agua y derechos en `site_settings`, tablas `license_requests`/`licenses`/`delivery_tokens`), pipeline de marca de agua (`sharp().composite`, tras el re-encode, antes de los derivados), embebido IPTC/XMP, flujo de licenciamiento con diagrama, pago diferido, e impacto en lo ya construido. Sin código — sigue en modo diseño hasta que el dueño confirme. |
 | 2026-09-02 | **Reencuadre de alcance: portafolio que protege y vende.** El dueño, tras investigar cómo se arma un portafolio de fotografía que sirva de verdad, amplió el objetivo: el sitio debe demostrar el **kit real para publicar, proteger y vender** obra — marca de agua, derechos embebidos, el archivo bueno tras un muro, y un flujo de licenciamiento — no una galería más "que hoy nadie va a ver". Datos ficticios, funcionalidad real. Analizada la investigación del dueño (7 principios de portafolio + guía tipo VSCO): **adoptados** "mostrar menos de lo que se tiene" (→ estado de publicación por imagen + selección curada), "contacto en un clic desde cualquier lugar", "agrupar por tipo no por cliente", "un scroll por especialidad"; **ya cubiertos** "abrir con imagen no con menú", "poseer el dominio" (D8), "segundas opiniones" (enlaces de compartir); **opcional** separar comercial/editorial (campo `category`); **descartado como software** el resto (proceso del fotógrafo, no del sitio). `PLAN_DESARROLLO.md` reescrito: §1 (marco), §2 (capas nuevas de **protección** y **licenciamiento**), §4 (decisiones abiertas **D9–D13**), §10 (fases **10b Curación**, **11 Protección**, **12 Licenciamiento**, **13 Pago opcional**). Sin código: modo diseño, y las fases 11+ están bloqueadas hasta cerrar D9–D13. Recomendaciones del arquitecto para cada decisión en §4. |
