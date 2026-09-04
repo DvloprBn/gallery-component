@@ -13,12 +13,13 @@
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
-10b (curación), 11 (protección: marca de agua + derechos) y 12a–12c (licenciamiento: solicitud,
-cotizar, emitir + entrega de un solo uso) verificadas.** Verificados con `curl` / scripts contra el
-backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de **seguridad de archivos**
-(F1–F19, incluida una corrección real en F19), el de identidad de sitio/contacto (S1–S13), el de
-protección (P1–P8) y el de licenciamiento (L1–L16 — ver más abajo). Pendiente para producción:
-confirmar API9 (inventario) y correr F7/F10 con volumen/espera reales.
+10b (curación), 11 (protección: marca de agua + derechos) y 12 completa —12a–12d— (licenciamiento:
+solicitud pública, cotizar, emitir + entrega de un solo uso, botón público del lightbox) verificadas.**
+Verificados con `curl` / scripts contra el backend en vivo los puntos de OWASP API Top 10 que
+aplican, el bloque de **seguridad de archivos** (F1–F19, incluida una corrección real en F19), el
+de identidad de sitio/contacto (S1–S13), el de protección (P1–P8) y el de licenciamiento (L1–L17 —
+ver más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
+volumen/espera reales.
 
 ### OWASP API Security Top 10 — cobertura tras la Fase 11
 
@@ -174,7 +175,7 @@ dev en `:3050`; restaura `site_settings` y borra los mensajes de prueba al termi
 
 ---
 
-## Bloque específico — Solicitudes de licencia (`/license-requests` — Fase 12a)
+## Bloque específico — Solicitudes de licencia (`/license-requests` — Fases 12a–12d)
 
 Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va ligada a una foto real.
 
@@ -196,6 +197,7 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L14 | Entrega de un solo uso — la carrera | dos descargas del **mismo token**: la primera → 200 con el archivo; la segunda → **404**, idéntico a un token inválido. El "claim" es atómico (`updateMany` condicionado a `used_at: null`, se revisa `count`) — no hay ventana donde ambas puedan colar | ✅ Probado (unit, la carrera) + ✅ Probado en vivo (secuencial) 2026-09-04 |
 | L15 | Entrega — token inventado / caducado / ya usado | los tres casos devuelven el mismo 404 (indistinguibles, mismo principio que las URLs firmadas de `/media/:key`); nunca se toca el almacenamiento si el token no pasa la validación | ✅ Probado 2026-09-04 |
 | L16 | Entrega — el archivo servido | `Content-Disposition: attachment`; es el **original** limpio de resolución completa (no un derivado); lleva los metadatos de derechos **más una nota de a quién se licenció**, incrustada al vuelo solo para esa descarga (trazabilidad si el archivo se filtra después) | ✅ Probado 2026-09-04 (descarga real ≈500 KB) |
+| L17 | Botón público "Solicitar licencia" del lightbox (Fase 12d) | Es solo frontend — llama a `POST /license-requests` con el mismo `imageId`/cuerpo que ya cubren L1–L5; no abre superficie nueva. Verificado que el cuerpo exacto que arma `LicenseRequestForm` (incluido `website` vacío) pasa por las mismas reglas: `imageId` de una foto real → 202 y llega a la bandeja; `website` relleno → 202 pero **nunca** llega a la bandeja (mismo honeypot que L3) | ✅ Probado 2026-09-04 (`verify-12d.mjs`, 12/12 checks) |
 
 ---
 

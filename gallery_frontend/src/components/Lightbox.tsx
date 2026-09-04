@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GalleryImage } from '@/lib/gallery-schema';
 import { useSite } from '@/lib/site';
+import { LicenseRequestForm } from './LicenseRequestForm';
 
 /**
  * Visor a pantalla completa. Se abre desde una imagen de la galería; permite
@@ -28,6 +29,8 @@ export function Lightbox({
   // `mounted` mantiene el nodo un instante tras cerrar, para la transición de salida.
   const [mounted, setMounted] = useState(isOpen);
   const [visible, setVisible] = useState(false);
+  // Panel de "Solicitar licencia" (Fase 12d) — se cierra solo al cambiar de foto.
+  const [showLicenseForm, setShowLicenseForm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,6 +42,11 @@ export function Lightbox({
     const timer = setTimeout(() => setMounted(false), 200);
     return () => clearTimeout(timer);
   }, [isOpen]);
+
+  // Cambiar de foto (o cerrar) descarta cualquier solicitud a medio llenar.
+  useEffect(() => {
+    setShowLicenseForm(false);
+  }, [index]);
 
   const go = useCallback(
     (delta: number) => {
@@ -110,6 +118,20 @@ export function Lightbox({
         {site.rights.noticeText ? (
           <p className="g-lightbox-rights">{site.rights.noticeText}</p>
         ) : null}
+        {showLicenseForm ? (
+          <LicenseRequestForm
+            imageId={current.imageId}
+            onClose={() => setShowLicenseForm(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="g-lightbox-license-toggle"
+            onClick={() => setShowLicenseForm(true)}
+          >
+            Solicitar licencia
+          </button>
+        )}
       </figure>
       <button
         className="g-lightbox-nav g-next"

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, apiFetch } from '@/lib/api-client';
 import { ADMIN_ROLES } from '@/lib/auth';
 import { RequireAuth } from '@/components/RequireAuth';
+import { INTENDED_USE_LABEL as USE_LABEL } from '@/lib/intended-use';
 
 export default function LicenseRequestsPage() {
   return (
@@ -14,14 +15,6 @@ export default function LicenseRequestsPage() {
     </RequireAuth>
   );
 }
-
-/** Los usos que se pueden solicitar, con su etiqueta en español. */
-const USE_LABEL: Record<string, string> = {
-  editorial: 'Editorial',
-  commercial: 'Comercial',
-  social: 'Redes sociales',
-  print: 'Impresión',
-};
 
 /** Estado de la solicitud. */
 const STATUS_LABEL: Record<string, string> = {
@@ -82,6 +75,9 @@ function Inner() {
   const [openQuoteId, setOpenQuoteId] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
+  // Registro de licencias emitidas (Fase 12d): mismos datos, filtrados a las
+  // solicitudes que ya tienen una licencia — no hay un endpoint aparte.
+  const [view, setView] = useState<'pending' | 'issued'>('pending');
 
   const load = () =>
     apiFetch<LicenseRequest[]>('/license-requests')
@@ -124,26 +120,48 @@ function Inner() {
     }
   };
 
+  const issued = requests?.filter((r) => r.license !== null) ?? [];
+  const visible = requests === null ? null : view === 'issued' ? issued : requests;
+
   return (
     <main className="panel">
       <div className="panel-head">
-        <h1>Solicitudes de licencia</h1>
+        <h1>{view === 'issued' ? 'Licencias emitidas' : 'Solicitudes de licencia'}</h1>
         <a href="/studio" className="link-button">
           ← Gestor
         </a>
       </div>
 
-      {requests === null ? (
+      <div className="inline-form" style={{ marginBottom: '1rem' }}>
+        <button
+          type="button"
+          className={view === 'pending' ? undefined : 'link-button'}
+          onClick={() => setView('pending')}
+        >
+          Solicitudes
+        </button>
+        <button
+          type="button"
+          className={view === 'issued' ? undefined : 'link-button'}
+          onClick={() => setView('issued')}
+        >
+          Licencias emitidas{requests ? ` (${issued.length})` : ''}
+        </button>
+      </div>
+
+      {visible === null ? (
         <p className="page-note">Cargando…</p>
-      ) : requests.length === 0 ? (
-        <p className="muted">Todavía no hay solicitudes.</p>
+      ) : visible.length === 0 ? (
+        <p className="muted">
+          {view === 'issued' ? 'Todavía no se ha emitido ninguna licencia.' : 'Todavía no hay solicitudes.'}
+        </p>
       ) : (
         <>
           <p className="muted">
-            {requests.length} {requests.length === 1 ? 'solicitud' : 'solicitudes'}
+            {visible.length} {visible.length === 1 ? (view === 'issued' ? 'licencia' : 'solicitud') : (view === 'issued' ? 'licencias' : 'solicitudes')}
           </p>
           <ul className="album-list">
-            {requests.map((r) => (
+            {visible.map((r) => (
               <li key={r.requestId} className="album-list__item">
                 {r.imageThumbUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element

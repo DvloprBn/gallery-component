@@ -1,14 +1,16 @@
 # Galería
 
-Portafolio de fotografía con personalización de galería y animaciones de grado profesional.
-**Demo de vitrina** que vivirá dentro del portafolio DvloprBn — no un producto independiente.
-Estándar de producción: sin atajos simulados, seguridad como prioridad #1, documentado al grado de
-poder leerse completo.
+El portafolio real de un fotógrafo: no solo enseña su obra, también la **protege** (marca de agua,
+derechos embebidos, el original nunca gratis en público) y permite **venderla** (licenciamiento de
+punta a punta) sin regalarla ni depender de otra plataforma. **Demo de vitrina** que vivirá dentro
+del portafolio DvloprBn — no un producto independiente. Estándar de producción: sin atajos
+simulados, seguridad como prioridad #1, documentado al grado de poder leerse completo.
 
 > **Estado: todas las fases planificadas completas** (infra · identidad · media · galería pública ·
 > Studio · seguridad transversal · documentación autogenerada · artefactos de despliegue ·
-> reencuadre como portafolio de fotografía). Queda el despliegue real (VPS + DNS de
-> `galeria.dvloprbn.dev`) y enlazarla desde el portafolio. Ver `ESTADO_PROYECTO.md`.
+> reencuadre como portafolio de fotografía · protección de la obra · licenciamiento y venta). Queda
+> el despliegue real (VPS + DNS de `galeria.dvloprbn.dev`), enlazarla desde el portafolio, y la Fase
+> 13 (pago con Stripe en modo test, diferida a ≈2026-09-17). Ver `ESTADO_PROYECTO.md`.
 
 ## Qué tiene
 
@@ -25,6 +27,13 @@ poder leerse completo.
 - **Seguridad de archivos real**: validación por contenido (magic bytes), re-encode obligatorio,
   tiro de metadatos EXIF/GPS, límites contra decompression bombs y DoS de subida, imágenes
   privadas solo por URL firmada.
+- **Protección de la obra**: marca de agua estampada por el servidor en todo lo público, el
+  original de alta resolución nunca se sirve fuera de un álbum privado, registro de derechos por
+  imagen embebido en IPTC/XMP con `exiftool` real.
+- **Licenciamiento y venta**: botón "Solicitar licencia" en la propia foto del lightbox → el
+  gestor cotiza → al aceptar se emite la licencia y se entrega el archivo limpio por una **URL de
+  un solo uso** (se consume en la primera descarga, con los datos del licenciatario embebidos).
+  Sin pago en el sitio todavía (Fase 13, en espera).
 
 ## Stack
 

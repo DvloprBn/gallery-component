@@ -1650,6 +1650,35 @@ button.danger:not(.link-button):hover:not(:disabled) {
   text-align: center;
 }
 
+/* Solicitar licencia desde el lightbox (Fase 12d) */
+.g-lightbox-license-toggle {
+  margin-top: 0.4rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.9rem;
+}
+
+.g-lightbox-license-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.g-license-panel {
+  margin-top: 0.5rem;
+  width: min(28rem, 88vw);
+  max-width: 88vw;
+  padding: 1rem 1.1rem;
+  background: rgba(20, 20, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.g-license-panel label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 /* Cotización de licencia (gestor, Fase 12b) */
 .license-quote {
   margin-top: 0.6rem;

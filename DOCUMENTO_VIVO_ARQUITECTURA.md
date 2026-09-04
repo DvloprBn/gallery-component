@@ -1558,3 +1558,71 @@ antes del intento de correo, el fallo de envío no revierte nada.
 **101 tests / 15 suites** (`licensing.service.spec.ts` gana 8 tests para `accept()` y
 `consumeDelivery()`, incluida la carrera). `tsc` OK. `next build` (prod) OK, 16 rutas (sin cambio
 de conteo). Bloque L12–L16 y corrección de F19 en `PRUEBAS_SEGURIDAD.md`.
+
+## 18. Fase 12d — Licenciamiento: público + registro + pulido (completada y verificada, 2026-09-04)
+
+Cuarto y último tramo de la Fase 12. Es **puro frontend**: no se tocó ni un archivo del backend —
+todo se apoya en endpoints que ya existían (`POST /license-requests`, `GET /license-requests`,
+`GET /contact/messages`), así que no hay superficie de seguridad nueva que auditar.
+
+### 18.1 Botón "Solicitar licencia" en el lightbox
+
+`components/LicenseRequestForm.tsx` (nuevo) replica el patrón de `ContactForm.tsx` — mismo `Status`
+(`idle`/`sending`/`sent`/`error`), mismo campo trampa `website` oculto con `hp-field`, mismo manejo
+de `ApiError` (429 → mensaje de límite de envíos) — sobre `POST /license-requests`. Recibe `imageId`
+como prop (nunca editable por quien solicita) y añade el selector de uso previsto
+(`lib/intended-use.ts`, nuevo — único origen de las etiquetas en español, lo usan tanto este
+formulario como la bandeja del gestor para que no se desalineen si cambia el DTO del backend).
+
+`Lightbox.tsx` gana un botón "Solicitar licencia" dentro del `<figure>`, junto al aviso de derechos.
+Al pulsarlo se abre el formulario **dentro del propio lightbox** (un panel, no una navegación
+aparte) — el `stopPropagation` que ya tenía el `<figure>` para no cerrar el visor al hacer clic en
+la imagen cubre también los campos del formulario. Un `useEffect` sobre `index` cierra el panel al
+cambiar de foto (o al cerrar el lightbox), para no dejar un formulario a medio llenar pegado a la
+foto equivocada.
+
+### 18.2 Registro de licencias emitidas
+
+`/studio/licencias` no tenía una vista separada para "lo que ya se vendió" — la información vivía
+mezclada dentro de cada tarjeta de solicitud. Se añadió una pestaña **"Licencias emitidas"** que
+filtra en el cliente el mismo array que ya devuelve `GET /license-requests` (`r.license !== null`)
+— deliberadamente no se creó un endpoint nuevo: el backend ya manda todo lo necesario embebido en
+cada solicitud, así que un endpoint aparte solo duplicaría datos sin aportar nada. Las tarjetas de
+licencias ya emitidas se renderizan con el mismo componente de lista — como su `status` es
+`accepted`/`fulfilled`, los botones "Cotizar"/"Aceptar" ya no aparecen (esa lógica ya existía).
+
+### 18.3 Contadores en el gestor del sitio
+
+`/studio` (la página de aterrizaje del gestor) ahora carga, solo si el usuario es admin,
+`GET /contact/messages` y `GET /license-requests` en paralelo y muestra "(N sin leer)" / "(N
+nuevas)" junto a los enlaces "Mensajes" y "Solicitudes de licencia" — para que el fotógrafo sepa si
+hay algo esperando atención sin tener que abrir las dos bandejas por costumbre. Se descartó fundir
+ambas bandejas en una sola tabla: mensajes y solicitudes de licencia tienen acciones distintas
+(leído/borrar vs. cotizar/aceptar) y modelos distintos — una tabla única las habría hecho más
+confusas de operar, no menos; el punto real de una "bandeja unificada" (saber de un vistazo si algo
+necesita atención) ya queda resuelto con los contadores.
+
+### 18.4 Verificación real
+
+Sin cambios de backend, la verificación fue confirmar que el frontend nuevo consume exactamente el
+contrato que el backend ya expone (`verify-12d.mjs`, script de un solo uso): una foto real de una
+galería pública → `POST /license-requests` con el cuerpo exacto que arma `LicenseRequestForm` → 202
+→ login como `admin+gallery@example.com` → la solicitud aparece en `GET /license-requests` con
+`status: 'new'` y trae `imageId`/`license`/`requesterEmail` (la forma que usa `LicenseRequest` en el
+frontend) → una segunda solicitud con el honeypot relleno se acepta (202) pero NUNCA llega a la
+bandeja → `GET /contact/messages` trae `isRead` en cada fila (lo que usa el contador del gestor) →
+el filtro de "licencias emitidas" no revienta con 0 ni con N licencias. **12/12 checks OK.**
+
+`tsc` limpio. `next build` en modo producción real (`NODE_ENV=production` explícito) también limpio
+— **16 rutas, sin errores** — pero solo tras descubrir que el contenedor de desarrollo exporta
+`NODE_ENV=development` para `next dev`, y ejecutar `next build` heredando esa variable dispara un
+fallo de Next 16 + Turbopack al pre-renderizar `/_global-error` (`Cannot read properties of null
+(reading 'useContext')`, reproducible incluso con un volumen `.next` aislado). No es un defecto de
+este proyecto ni de la Fase 12d — es una incompatibilidad de herramientas al construir dentro de un
+contenedor pensado para desarrollo — pero quedó documentado aquí para no volver a perder tiempo
+redescubriéndolo: cualquier verificación de `next build` dentro de `gallery_frontend` debe forzar
+`NODE_ENV=production` explícitamente.
+
+Con esto se cierra la Fase 12 completa (12a solicitud pública → 12b cotizar → 12c emitir y entregar
+→ 12d público y pulido): un fotógrafo puede publicar, proteger y vender su obra sin regalarla ni
+depender de otra plataforma, de punta a punta.

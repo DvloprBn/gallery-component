@@ -30,6 +30,7 @@ function StudioInner() {
   const { me } = useAuth();
   const [albums, setAlbums] = useState<AlbumRow[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [pending, setPending] = useState<{ messages: number; requests: number } | null>(null);
 
   const isAdmin = me != null && ADMIN_ROLES.includes(me.roleName);
 
@@ -39,6 +40,21 @@ function StudioInner() {
   useEffect(() => {
     void load();
   }, []);
+
+  // Cuántas cosas esperan atención en las dos bandejas — para no tener que
+  // abrir ambas solo para saber si hay algo nuevo (Fase 12d).
+  useEffect(() => {
+    if (!isAdmin) return;
+    Promise.all([
+      apiFetch<{ isRead: boolean }[]>('/contact/messages').catch(() => []),
+      apiFetch<{ status: string }[]>('/license-requests').catch(() => []),
+    ]).then(([messages, requests]) => {
+      setPending({
+        messages: messages.filter((m) => !m.isRead).length,
+        requests: requests.filter((r) => r.status === 'new').length,
+      });
+    });
+  }, [isAdmin]);
 
   const create = async (values: AlbumFormValues) => {
     await apiFetch('/albums', { method: 'POST', body: values });
@@ -58,8 +74,12 @@ function StudioInner() {
       {isAdmin && (
         <nav className="admin-links">
           <Link href="/studio/ajustes">Ajustes del sitio →</Link>
-          <Link href="/studio/mensajes">Mensajes →</Link>
-          <Link href="/studio/licencias">Solicitudes de licencia →</Link>
+          <Link href="/studio/mensajes">
+            Mensajes →{pending && pending.messages > 0 ? ` (${pending.messages} sin leer)` : ''}
+          </Link>
+          <Link href="/studio/licencias">
+            Solicitudes de licencia →{pending && pending.requests > 0 ? ` (${pending.requests} nueva${pending.requests === 1 ? '' : 's'})` : ''}
+          </Link>
         </nav>
       )}
 
