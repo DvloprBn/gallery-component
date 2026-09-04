@@ -1394,3 +1394,47 @@ No se implementa ahora — se documenta con honestidad en vez de simularlo.
   `rights.util.spec.ts`, `watermark.service.spec.ts` — incluye el test de regresión del mosaico —,
   `rights-metadata.service.spec.ts` de integración con `exiftool` real; `site.service.spec.ts`
   ampliado con el estado de la regeneración en segundo plano).
+
+## 15. Fase 12a — Licenciamiento: solicitud pública + bandeja (completada y verificada, 2026-09-04)
+
+Primer tramo de la Fase 12 (§12.5): captura la solicitud y la pone frente al gestor. Cotizar,
+aceptar y entregar el archivo firmado son fases posteriores (12b, 12c) — no se construyen aquí.
+
+### 15.1 Modelo de datos
+
+`license_requests` (migración `20260904155252_license_requests`): `request_id`, `image_id` (FK a
+`images`, `onDelete: Cascade`), `requester_name`/`requester_email`, `intended_use`
+(`editorial`/`commercial`/`social`/`print` — D11), `message`, `budget` (texto libre, opcional),
+`status` (`new` por ahora — el resto de la máquina de estados llega con cotizar/aceptar),
+`ip_address` (solo registro interno), `created_at`. Índices `(status, created_at)` y `(image_id)`.
+
+### 15.2 `src/licensing/` — mismo patrón que `contact`, a propósito
+
+`LicensingService.submit()` calca `ContactService.submit()`: honeypot (`website`), guarda,
+resuelve el destinatario del correo desde `SiteService.get().contactEmail` (mismo buzón que el
+contacto general), envía con `escapeHtml()`. La diferencia real: **valida la foto** antes de
+aceptar nada — `image.status !== 'published' || album.visibility !== 'public'` → 400 (no se puede
+pedir licencia de algo que no se exhibe; a diferencia del honeypot, esto sí es un error de
+validación normal, no necesita ser indistinguible).
+
+`LicensingService.list()` resuelve el contexto para el panel: miniatura (`thumb`) vía
+`StorageService.urlFor`, título/slug de la colección — sin exponer `ip_address`.
+
+| Endpoint | Acceso | Nota |
+|---|---|---|
+| `POST /license-requests` | `@Public()`, 202, `@Throttle(5/min)` | Igual que `/contact`. |
+| `GET /license-requests` | `admin`/`director`/`super` | Bandeja — sin acciones todavía. |
+
+### 15.3 Frontend
+
+`/studio/licencias` — bandeja de **solo lectura** (miniatura, solicitante, colección, uso,
+mensaje, presupuesto, fecha). Enlazada desde `/studio` y `/admin`. Cotizar/aceptar se agregan a
+esta misma página en la siguiente fase, no se crea una nueva.
+
+### 15.4 Verificación real
+
+`imageId` inexistente → 400; honeypot → 202 sin fila; solicitud válida → 202; campo extra
+(`status`) → 400 (whitelist); `intendedUse` inválido → 400; bandeja: sin sesión → 401, `usuario` →
+403, `admin`+ → 200 con miniatura y colección resueltas, sin `ipAddress`; ráfaga → 429.
+`next build` (prod) OK, 16 rutas. `tsc` OK. **87 tests / 15 suites** (nuevo
+`licensing.service.spec.ts`, 8 tests).

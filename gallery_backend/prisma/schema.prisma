@@ -184,13 +184,40 @@ model images {
   rights          Json?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
-  album    albums          @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
-  owner    users           @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
-  variants image_variants[]
+  album           albums            @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+  owner           users             @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+  variants        image_variants[]
+  license_requests license_requests[]
 
   @@index([album_id])
   @@index([album_id, status])
   @@index([owner_user_id])
+}
+
+/**
+ * Solicitud de licencia (Fase 12a): un visitante pide usar UNA foto para un
+ * uso concreto. Primer paso del flujo solicitud → cotización → entrega — por
+ * ahora solo se captura y se avisa por correo; cotizar/aceptar/entregar
+ * llegan en fases posteriores.
+ */
+model license_requests {
+  request_id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  image_id        String   @db.Uuid
+  requester_name  String   @db.VarChar(150)
+  requester_email String   @db.VarChar(255)
+  // 'editorial' | 'commercial' | 'social' | 'print'.
+  intended_use    String   @db.VarChar(20)
+  message         String   @db.VarChar(2000) // descripción del uso / alcance
+  budget          String?  @db.VarChar(200) // texto libre — no se fuerza moneda ni monto
+  // 'new' | 'quoted' | 'accepted' | 'declined' | 'fulfilled'.
+  status          String   @default("new") @db.VarChar(20)
+  ip_address      String?  @db.VarChar(45) // solo registro interno, nunca se expone
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+
+  @@index([status, created_at])
+  @@index([image_id])
 }
 
 // Derivados responsivos generados por el pipeline. Se sirven ESTOS, nunca

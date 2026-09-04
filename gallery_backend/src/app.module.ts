@@ -20,6 +20,7 @@ import { ImagesModule } from './images/images.module';
 import { MediaModule } from './media/media.module';
 import { SiteModule } from './site/site.module';
 import { ContactModule } from './contact/contact.module';
+import { LicensingModule } from './licensing/licensing.module';
 import { HealthController } from './health/health.controller';
 
 /**
@@ -56,6 +57,7 @@ import { HealthController } from './health/health.controller';
     MediaModule,
     SiteModule,
     ContactModule,
+    LicensingModule,
   ],
   controllers: [HealthController],
   providers: [

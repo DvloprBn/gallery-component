@@ -36,6 +36,9 @@ function Inner() {
         <li>
           <Link href="/studio/mensajes">Mensajes →</Link>
         </li>
+        <li>
+          <Link href="/studio/licencias">Solicitudes de licencia →</Link>
+        </li>
       </ul>
     </main>
   );

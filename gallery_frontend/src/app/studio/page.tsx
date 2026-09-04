@@ -59,6 +59,7 @@ function StudioInner() {
         <nav className="admin-links">
           <Link href="/studio/ajustes">Ajustes del sitio →</Link>
           <Link href="/studio/mensajes">Mensajes →</Link>
+          <Link href="/studio/licencias">Solicitudes de licencia →</Link>
         </nav>
       )}
 
