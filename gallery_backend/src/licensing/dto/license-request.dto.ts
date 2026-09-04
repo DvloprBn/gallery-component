@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -51,4 +52,24 @@ export class SubmitLicenseRequestDto {
   @IsString()
   @MaxLength(200)
   website?: string;
+}
+
+/** `PATCH /license-requests/:id` — el gestor cotiza una solicitud (Fase 12b). */
+export class QuoteLicenseRequestDto {
+  /** Precio — texto libre, igual que `budget` (no se fuerza moneda ni monto). */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  price!: string;
+
+  /** Condiciones/alcance de la licencia ofrecida (uso, vigencia, exclusividad…), en prosa. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  conditions?: string;
+
+  /** Hasta cuándo es válida ESTA cotización (no la licencia una vez aceptada). */
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
 }

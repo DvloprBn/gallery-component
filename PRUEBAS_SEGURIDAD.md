@@ -13,10 +13,10 @@
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
-10b (curación), 11 (protección: marca de agua + derechos) y 12a (solicitud de licencia) verificadas.**
-Verificados con `curl` / scripts contra el backend en vivo los puntos de OWASP API Top 10 que
-aplican, el bloque de **seguridad de archivos** (F1–F19), el de identidad de sitio/contacto
-(S1–S13), el de protección (P1–P8) y el de solicitudes de licencia (L1–L7 — ver más abajo).
+10b (curación), 11 (protección: marca de agua + derechos), 12a (solicitud de licencia) y 12b
+(cotizar) verificadas.** Verificados con `curl` / scripts contra el backend en vivo los puntos de
+OWASP API Top 10 que aplican, el bloque de **seguridad de archivos** (F1–F19), el de identidad de
+sitio/contacto (S1–S13), el de protección (P1–P8) y el de licenciamiento (L1–L11 — ver más abajo).
 Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con volumen/espera reales.
 
 ### OWASP API Security Top 10 — cobertura tras la Fase 11
@@ -27,7 +27,7 @@ Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con volu
 | API2 — Broken Authentication | ✅ Probado: anti-enumeración (`login/step1` idéntico), challenge token de 2FA nunca es sesión (401 en `/auth/me`), logout revoca el refresh en BD, reuso de refresh → cascada, JWT `HS256` fijo. |
 | API3 — Mass Assignment | ✅ Probado: propiedad extra en el body (`role_id` en registro; `is_read`/`messageId` en `POST /contact`; `status` en `POST /license-requests`) → 400 por `forbidNonWhitelisted`. |
 | API4 — Unrestricted Resource Consumption | ✅ Probado: fuerza bruta login/2FA → 429; **subida**: `limits.fileSize` → 413, `limitInputPixels` → 400, rate limit 120/h por usuario; **`POST /contact`** con `@Throttle(5/min)` → 429 en la ráfaga; `message` > 4000 → 400; **`POST /site/watermark`** con tope de 5 MB propio; **`POST /site/watermark/regenerate`** corre en segundo plano y una segunda llamada mientras hay una en curso no relanza el trabajo (evita apilar N regeneraciones simultáneas — ver P8). |
-| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site`, `POST/DELETE /site/watermark`, `POST/GET /site/watermark/regenerate` y `GET/PATCH/DELETE /contact/messages`**: sin sesión → 401, `usuario` → 403, `admin`+ → 200/201/202. |
+| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site`, `POST/DELETE /site/watermark`, `POST/GET /site/watermark/regenerate`, `GET/PATCH/DELETE /contact/messages` y `GET/PATCH /license-requests`**: sin sesión → 401, `usuario` → 403, `admin`+ → 200/201/202. |
 | API6 — Sensitive Business Flows | ✅ Parcial: registro y login limitados por el mismo mecanismo de API4. |
 | API7 — SSRF | No aplica todavía (sin "importar imagen por URL" ni OAuth). |
 | API8 — Security Misconfiguration | ✅ helmet, CORS explícito, Swagger solo dev, secretos fuera de git; cabeceras de seguridad del frontend (CSP env-aware, `X-Frame-Options`, HSTS en prod) — Fase 10 hardening. |
@@ -186,6 +186,10 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L5 | Throttle | ráfaga > 5/min → **429** | ✅ Probado 2026-09-04 |
 | L6 | `GET /license-requests` RBAC | sin sesión → 401; `usuario` → 403; `admin`+ → 200 | ✅ Probado 2026-09-04 |
 | L7 | `GET /license-requests` fuga de IP | la respuesta no trae `ipAddress`/`ip_address` | ✅ Probado 2026-09-04 |
+| L8 | `PATCH /license-requests/:id` RBAC (Fase 12b) | sin sesión → 401; `usuario` → 403; `admin`+ → 200 | ✅ Probado 2026-09-04 |
+| L9 | Cotizar una solicitud ya cerrada | `accepted`/`declined`/`fulfilled` → **400** ("ya no se puede cotizar"); `new`/`quoted` sí aceptan (recotizar es válido) | ✅ Probado 2026-09-04 |
+| L10 | Cotizar un `:id` inexistente | → **404** | ✅ Probado 2026-09-04 |
+| L11 | Validación de la cotización | `price` vacío → 400 (DTO); `conditions` con HTML/script → se escapa antes de ir al correo | ✅ Probado 2026-09-04 |
 
 ---
 

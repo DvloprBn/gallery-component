@@ -1,12 +1,23 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { escapeHtml } from '../common/utils/escape-html.util';
 import { MailService } from '../mail/mail.service';
 import { SiteService } from '../site/site.service';
 import { StorageService } from '../storage/storage.service';
-import type { SubmitLicenseRequestDto } from './dto/license-request.dto';
+import type {
+  QuoteLicenseRequestDto,
+  SubmitLicenseRequestDto,
+} from './dto/license-request.dto';
 
-/** Una solicitud de licencia tal como la ve el panel — con el contexto de la foto. */
+/** Estados desde los que todavía se puede (re)cotizar una solicitud. */
+const QUOTABLE_STATUSES = new Set(['new', 'quoted']);
+
+/** Una solicitud de licencia tal como la ve el panel — con el contexto de la foto y su cotización. */
 export interface LicenseRequestView {
   requestId: string;
   imageId: string;
@@ -20,12 +31,37 @@ export interface LicenseRequestView {
   budget: string | null;
   status: string;
   createdAt: Date;
+  quotedPrice: string | null;
+  quotedConditions: string | null;
+  quoteExpiresAt: Date | null;
+  quotedAt: Date | null;
+}
+
+/** Lo que necesita `toView` de una fila — evita depender del tipo inferido de Prisma. */
+interface RequestRow {
+  request_id: string;
+  image_id: string;
+  requester_name: string;
+  requester_email: string;
+  intended_use: string;
+  message: string;
+  budget: string | null;
+  status: string;
+  created_at: Date;
+  quoted_price: string | null;
+  quoted_conditions: string | null;
+  quote_expires_at: Date | null;
+  quoted_at: Date | null;
+  image: {
+    album: { title: string; slug: string };
+    variants: { label: string; storage_key: string }[];
+  };
 }
 
 /**
- * Solicitudes de licencia sobre fotos publicadas (Fase 12a — primer tramo del
- * flujo solicitud → cotización → entrega). Por ahora solo captura y avisa;
- * cotizar/aceptar/entregar el archivo son fases posteriores.
+ * Solicitudes de licencia sobre fotos publicadas. Fase 12a (captura + aviso) +
+ * Fase 12b (cotizar). Emitir la licencia y entregar el archivo firmado de un
+ * solo uso son fases posteriores (12c).
  */
 @Injectable()
 export class LicensingService {
@@ -109,23 +145,93 @@ export class LicensingService {
         },
       },
     });
+    return rows.map((r) => this.toView(r));
+  }
 
-    return rows.map((r) => {
-      const thumb = r.image.variants.find((v) => v.label === 'thumb');
-      return {
-        requestId: r.request_id,
-        imageId: r.image_id,
-        imageThumbUrl: thumb ? this.storage.urlFor(thumb.storage_key, 'public') : null,
-        collectionTitle: r.image.album.title,
-        collectionSlug: r.image.album.slug,
-        requesterName: r.requester_name,
-        requesterEmail: r.requester_email,
-        intendedUse: r.intended_use,
-        message: r.message,
-        budget: r.budget,
-        status: r.status,
-        createdAt: r.created_at,
-      };
+  /**
+   * Cotiza una solicitud: precio + condiciones + hasta cuándo es válida la
+   * oferta. Avisa al solicitante por correo. Se puede recotizar mientras no
+   * se haya aceptado/rechazado/entregado.
+   *
+   * @throws NotFoundException si la solicitud no existe.
+   * @throws BadRequestException si ya está aceptada, rechazada o entregada
+   *         — esos estados ya no admiten una cotización nueva.
+   */
+  async quote(
+    requestId: string,
+    dto: QuoteLicenseRequestDto,
+  ): Promise<LicenseRequestView> {
+    const existing = await this.prisma.license_requests.findUnique({
+      where: { request_id: requestId },
+      include: { image: { include: { album: { select: { title: true, slug: true } } } } },
     });
+    if (!existing) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+    if (!QUOTABLE_STATUSES.has(existing.status)) {
+      throw new BadRequestException(
+        'Esta solicitud ya no se puede cotizar (ya fue aceptada, rechazada o entregada).',
+      );
+    }
+
+    const updated = await this.prisma.license_requests.update({
+      where: { request_id: requestId },
+      data: {
+        status: 'quoted',
+        quoted_price: dto.price.trim(),
+        quoted_conditions: dto.conditions?.trim() || null,
+        quote_expires_at: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        quoted_at: new Date(),
+      },
+      include: {
+        image: {
+          include: {
+            album: { select: { title: true, slug: true } },
+            variants: true,
+          },
+        },
+      },
+    });
+
+    await this.mail.send(
+      updated.requester_email,
+      `Cotización de licencia — ${escapeHtml(existing.image.album.title)}`,
+      `<p>Hola ${escapeHtml(updated.requester_name)},</p>` +
+        `<p>Aquí está la cotización para tu solicitud sobre «${escapeHtml(existing.image.album.title)}»:</p>` +
+        `<p><strong>Precio:</strong> ${escapeHtml(dto.price)}</p>` +
+        (dto.conditions
+          ? `<p><strong>Condiciones:</strong> ${escapeHtml(dto.conditions)}</p>`
+          : '') +
+        (dto.expiresAt
+          ? `<p><strong>Esta cotización es válida hasta:</strong> ${escapeHtml(
+              new Date(dto.expiresAt).toLocaleDateString('es-MX'),
+            )}</p>`
+          : ''),
+    );
+
+    return this.toView(updated);
+  }
+
+  /** Proyecta una fila (con sus relaciones ya incluidas) a la forma del panel. */
+  private toView(row: RequestRow): LicenseRequestView {
+    const thumb = row.image.variants.find((v) => v.label === 'thumb');
+    return {
+      requestId: row.request_id,
+      imageId: row.image_id,
+      imageThumbUrl: thumb ? this.storage.urlFor(thumb.storage_key, 'public') : null,
+      collectionTitle: row.image.album.title,
+      collectionSlug: row.image.album.slug,
+      requesterName: row.requester_name,
+      requesterEmail: row.requester_email,
+      intendedUse: row.intended_use,
+      message: row.message,
+      budget: row.budget,
+      status: row.status,
+      createdAt: row.created_at,
+      quotedPrice: row.quoted_price,
+      quotedConditions: row.quoted_conditions,
+      quoteExpiresAt: row.quote_expires_at,
+      quotedAt: row.quoted_at,
+    };
   }
 }

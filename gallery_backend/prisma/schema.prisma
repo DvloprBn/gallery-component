@@ -214,6 +214,12 @@ model license_requests {
   ip_address      String?  @db.VarChar(45) // solo registro interno, nunca se expone
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
+  // ── Cotización (Fase 12b) — la pone el gestor al responder ──
+  quoted_price      String?   @db.VarChar(200) // texto libre — no se fuerza moneda ni monto
+  quoted_conditions String?   @db.VarChar(1000) // alcance/vigencia de la licencia ofrecida, en prosa
+  quote_expires_at  DateTime? @db.Timestamptz(6) // hasta cuándo es válida ESTA cotización
+  quoted_at         DateTime? @db.Timestamptz(6)
+
   image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
 
   @@index([status, created_at])

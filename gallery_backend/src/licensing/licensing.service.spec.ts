@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../common/prisma/prisma.service';
 import type { MailService } from '../mail/mail.service';
 import type { SiteService } from '../site/site.service';
@@ -22,12 +22,25 @@ const validDto = {
 describe('LicensingService', () => {
   let prisma: {
     images: { findUnique: jest.Mock };
-    license_requests: { create: jest.Mock; findMany: jest.Mock };
+    license_requests: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
   };
   let mail: { send: jest.Mock };
   let site: { get: jest.Mock };
   let storage: { urlFor: jest.Mock };
   let service: LicensingService;
+
+  const quotableRow = {
+    request_id: 'r1',
+    requester_name: 'Editor XYZ',
+    requester_email: 'editor@revista.com',
+    status: 'new',
+    image: { album: { title: 'Calle', slug: 'calle-abc' } },
+  };
 
   beforeEach(() => {
     prisma = {
@@ -35,6 +48,14 @@ describe('LicensingService', () => {
       license_requests: {
         create: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(quotableRow),
+        update: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            ...quotableRow,
+            ...data,
+            image: { ...quotableRow.image, variants: [] },
+          }),
+        ),
       },
     };
     mail = { send: jest.fn().mockResolvedValue({ delivered: false }) };
@@ -141,6 +162,81 @@ describe('LicensingService', () => {
       collectionSlug: 'calle-abc',
       imageThumbUrl: 'https://cdn.test/thumb.webp',
       budget: '$500 USD',
+    });
+  });
+
+  describe('quote()', () => {
+    it('rechaza una solicitud inexistente', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue(null);
+      await expect(
+        service.quote('r1', { price: '$500 USD' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.license_requests.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza cotizar una solicitud ya aceptada/rechazada/entregada', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue({
+        ...quotableRow,
+        status: 'accepted',
+      });
+      await expect(
+        service.quote('r1', { price: '$500 USD' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.license_requests.update).not.toHaveBeenCalled();
+    });
+
+    it('permite recotizar una solicitud ya cotizada (no solo "new")', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue({
+        ...quotableRow,
+        status: 'quoted',
+      });
+      await expect(
+        service.quote('r1', { price: '$600 USD' }),
+      ).resolves.toBeDefined();
+      expect(prisma.license_requests.update).toHaveBeenCalled();
+    });
+
+    it('guarda la cotización y pasa el estado a "quoted"', async () => {
+      const result = await service.quote('r1', {
+        price: '$500 USD',
+        conditions: 'Uso editorial, un año, con crédito.',
+        expiresAt: '2026-12-31',
+      });
+
+      const call = prisma.license_requests.update.mock.calls[0][0];
+      expect(call.where).toEqual({ request_id: 'r1' });
+      expect(call.data).toMatchObject({
+        status: 'quoted',
+        quoted_price: '$500 USD',
+        quoted_conditions: 'Uso editorial, un año, con crédito.',
+      });
+      expect(call.data.quote_expires_at).toBeInstanceOf(Date);
+      expect(call.data.quoted_at).toBeInstanceOf(Date);
+      expect(result.status).toBe('quoted');
+    });
+
+    it('avisa al solicitante por correo con el precio (escapado)', async () => {
+      await service.quote('r1', {
+        price: '$500 USD',
+        conditions: '<script>alert(1)</script>',
+      });
+      expect(mail.send).toHaveBeenCalledTimes(1);
+      const [to, subject, html] = mail.send.mock.calls[0];
+      expect(to).toBe('editor@revista.com');
+      expect(subject).toContain('Calle');
+      expect(html).toContain('$500 USD');
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('condiciones/vigencia vacías son opcionales — no truena', async () => {
+      await expect(service.quote('r1', { price: '$500' })).resolves.toBeDefined();
+      expect(
+        prisma.license_requests.update.mock.calls[0][0].data.quoted_conditions,
+      ).toBeNull();
+      expect(
+        prisma.license_requests.update.mock.calls[0][0].data.quote_expires_at,
+      ).toBeNull();
     });
   });
 });

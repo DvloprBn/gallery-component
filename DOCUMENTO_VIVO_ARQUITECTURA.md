@@ -1438,3 +1438,43 @@ esta misma página en la siguiente fase, no se crea una nueva.
 403, `admin`+ → 200 con miniatura y colección resueltas, sin `ipAddress`; ráfaga → 429.
 `next build` (prod) OK, 16 rutas. `tsc` OK. **87 tests / 15 suites** (nuevo
 `licensing.service.spec.ts`, 8 tests).
+
+## 16. Fase 12b — Licenciamiento: cotizar (completada y verificada, 2026-09-04)
+
+Segundo tramo de la Fase 12. El gestor responde una solicitud con precio, condiciones y hasta
+cuándo es válida la oferta; el solicitante recibe la cotización por correo.
+
+### 16.1 Modelo de datos
+
+Migración `20260904220024_license_quotes` — añade a `license_requests`: `quoted_price` (texto
+libre, igual que `budget`), `quoted_conditions` (alcance/exclusividad/vigencia de la licencia
+ofrecida, en prosa — se decidió no modelar estos campos por separado hasta que la Fase 12c defina
+exactamente qué necesita una `license`), `quote_expires_at` (hasta cuándo es válida **la
+cotización**, no la licencia una vez aceptada), `quoted_at`.
+
+### 16.2 Backend
+
+`LicensingService.quote(requestId, dto)`:
+- Solo se puede (re)cotizar desde `new` o `quoted` — `accepted`/`declined`/`fulfilled` rechazan con
+  400 ("ya no se puede cotizar"). Recotizar está permitido a propósito: el gestor puede ajustar el
+  precio antes de que el cliente acepte.
+- `PATCH /license-requests/:id` (`admin`+) — `QuoteLicenseRequestDto` (`price` obligatorio,
+  `conditions`/`expiresAt` opcionales).
+- Correo al solicitante con el precio/condiciones/vigencia, escapado igual que el resto del
+  proyecto.
+- `list()` y `quote()` comparten la proyección a `LicenseRequestView` (`toView()` privado) — se
+  refactorizó para no duplicar el mapeo.
+
+### 16.3 Frontend
+
+`/studio/licencias` gana, por solicitud: si ya tiene cotización, la muestra (precio, condiciones,
+cuándo se envió, hasta cuándo es válida); un botón "Cotizar"/"Recotizar" (solo visible en estados
+cotizables) despliega un formulario compacto (precio, condiciones, fecha opcional) que guarda con
+`PATCH`. Misma página que en 12a — no se creó una nueva.
+
+### 16.4 Verificación real
+
+Solicitud inexistente → 404; recotizar desde `quoted` → permitido; cotizar desde `accepted` → 400;
+`price` vacío → 400 (DTO); RBAC (401/403/200); el correo llega con el precio y las condiciones
+escapadas. `next build` OK (16 rutas, sin cambio de conteo — se amplió la página existente).
+`tsc` OK. **93 tests / 15 suites** (`licensing.service.spec.ts` gana 6 tests para `quote()`).

@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api-client';
+import { ApiError, apiFetch } from '@/lib/api-client';
 import { ADMIN_ROLES } from '@/lib/auth';
 import { RequireAuth } from '@/components/RequireAuth';
 
@@ -23,7 +23,7 @@ const USE_LABEL: Record<string, string> = {
   print: 'Impresión',
 };
 
-/** Estado de la solicitud — hoy solo se genera `new`; el resto llega con cotizar/aceptar. */
+/** Estado de la solicitud. `accepted`/`declined`/`fulfilled` llegan con la Fase 12c. */
 const STATUS_LABEL: Record<string, string> = {
   new: 'Nueva',
   quoted: 'Cotizada',
@@ -31,6 +31,9 @@ const STATUS_LABEL: Record<string, string> = {
   declined: 'Rechazada',
   fulfilled: 'Entregada',
 };
+
+/** Estados desde los que todavía se puede (re)cotizar — igual que el backend. */
+const QUOTABLE = new Set(['new', 'quoted']);
 
 /** Una solicitud de licencia, tal como la devuelve `GET /license-requests`. */
 interface LicenseRequest {
@@ -46,21 +49,45 @@ interface LicenseRequest {
   budget: string | null;
   status: string;
   createdAt: string;
+  quotedPrice: string | null;
+  quotedConditions: string | null;
+  quoteExpiresAt: string | null;
+  quotedAt: string | null;
 }
 
 /**
- * Bandeja de solicitudes de licencia (Fase 12a — solo lectura). Cotizar,
- * aceptar y entregar el archivo llegan en fases posteriores; por ahora esto
- * es el punto donde el gestor ve qué está pidiendo la gente.
+ * Bandeja de solicitudes de licencia. Fase 12a (lectura) + Fase 12b (cotizar):
+ * el gestor responde precio + condiciones + hasta cuándo es válida la oferta.
+ * Emitir la licencia y entregar el archivo firmado llegan en la Fase 12c.
  */
 function Inner() {
   const [requests, setRequests] = useState<LicenseRequest[] | null>(null);
+  const [openQuoteId, setOpenQuoteId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () =>
     apiFetch<LicenseRequest[]>('/license-requests')
       .then(setRequests)
       .catch(() => setRequests([]));
+
+  useEffect(() => {
+    void load();
   }, []);
+
+  const submitQuote = async (
+    id: string,
+    quote: { price: string; conditions: string; expiresAt: string },
+  ) => {
+    await apiFetch(`/license-requests/${id}`, {
+      method: 'PATCH',
+      body: {
+        price: quote.price,
+        conditions: quote.conditions || undefined,
+        expiresAt: quote.expiresAt || undefined,
+      },
+    });
+    setOpenQuoteId(null);
+    await load();
+  };
 
   return (
     <main className="panel">
@@ -112,8 +139,46 @@ function Inner() {
                   <p style={{ margin: '0.5rem 0 0', whiteSpace: 'pre-wrap' }}>{r.message}</p>
                   {r.budget ? (
                     <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-                      Presupuesto: {r.budget}
+                      Presupuesto del solicitante: {r.budget}
                     </p>
+                  ) : null}
+
+                  {r.quotedPrice ? (
+                    <div className="license-quote">
+                      <strong>Cotizado: {r.quotedPrice}</strong>
+                      {r.quotedConditions ? <p>{r.quotedConditions}</p> : null}
+                      <span className="hint">
+                        {r.quotedAt ? `Enviada ${new Date(r.quotedAt).toLocaleString()}` : ''}
+                        {r.quoteExpiresAt
+                          ? ` · válida hasta ${new Date(r.quoteExpiresAt).toLocaleDateString()}`
+                          : ''}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {QUOTABLE.has(r.status) ? (
+                    <button
+                      type="button"
+                      className="link-button"
+                      style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}
+                      onClick={() =>
+                        setOpenQuoteId((cur) => (cur === r.requestId ? null : r.requestId))
+                      }
+                    >
+                      {r.quotedPrice ? 'Recotizar' : 'Cotizar'}{' '}
+                      {openQuoteId === r.requestId ? '▲' : '▾'}
+                    </button>
+                  ) : null}
+
+                  {openQuoteId === r.requestId ? (
+                    <QuoteForm
+                      initial={{
+                        price: r.quotedPrice ?? '',
+                        conditions: r.quotedConditions ?? '',
+                        expiresAt: r.quoteExpiresAt ? r.quoteExpiresAt.slice(0, 10) : '',
+                      }}
+                      onSubmit={(quote) => submitQuote(r.requestId, quote)}
+                    />
                   ) : null}
                 </div>
                 <a
@@ -130,5 +195,67 @@ function Inner() {
         </>
       )}
     </main>
+  );
+}
+
+/** Formulario compacto para cotizar (o recotizar) una solicitud. */
+function QuoteForm({
+  initial,
+  onSubmit,
+}: {
+  initial: { price: string; conditions: string; expiresAt: string };
+  onSubmit: (quote: { price: string; conditions: string; expiresAt: string }) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit(draft);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo guardar la cotización.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="license-quote-form stack" onSubmit={submit}>
+      <label>
+        Precio
+        <input
+          required
+          maxLength={200}
+          placeholder="p. ej. $500 USD"
+          value={draft.price}
+          onChange={(e) => setDraft((d) => ({ ...d, price: e.target.value }))}
+        />
+      </label>
+      <label>
+        Condiciones (alcance, exclusividad, vigencia…)
+        <textarea
+          rows={3}
+          maxLength={1000}
+          value={draft.conditions}
+          onChange={(e) => setDraft((d) => ({ ...d, conditions: e.target.value }))}
+        />
+      </label>
+      <label>
+        Esta cotización es válida hasta (opcional)
+        <input
+          type="date"
+          value={draft.expiresAt}
+          onChange={(e) => setDraft((d) => ({ ...d, expiresAt: e.target.value }))}
+        />
+      </label>
+      <button type="submit" disabled={busy}>
+        {busy ? 'Enviando…' : 'Enviar cotización'}
+      </button>
+      {error ? <p className="form-error">{error}</p> : null}
+    </form>
   );
 }

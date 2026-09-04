@@ -1,16 +1,29 @@
-import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { SubmitLicenseRequestDto } from './dto/license-request.dto';
+import {
+  QuoteLicenseRequestDto,
+  SubmitLicenseRequestDto,
+} from './dto/license-request.dto';
 import { LicensingService } from './licensing.service';
 
 /**
- * Solicitudes de licencia sobre fotos publicadas (Fase 12a). Envío público,
- * bandeja para roles administrativos — cotizar/aceptar llegan en fases
- * posteriores.
+ * Solicitudes de licencia sobre fotos publicadas. Envío público, bandeja y
+ * cotización para roles administrativos — emitir la licencia y entregar el
+ * archivo firmado llegan en la Fase 12c.
  */
 @ApiTags('licensing')
 @Controller('license-requests')
@@ -32,5 +45,15 @@ export class LicensingController {
   @ApiOperation({ summary: 'Bandeja de solicitudes de licencia' })
   list() {
     return this.licensing.list();
+  }
+
+  @Roles('admin', 'director', 'super')
+  @Patch(':id')
+  @ApiOperation({ summary: 'Cotiza una solicitud (precio, condiciones, vigencia de la oferta)' })
+  quote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: QuoteLicenseRequestDto,
+  ) {
+    return this.licensing.quote(id, dto);
   }
 }
