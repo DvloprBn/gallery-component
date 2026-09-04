@@ -23,7 +23,7 @@ const USE_LABEL: Record<string, string> = {
   print: 'Impresión',
 };
 
-/** Estado de la solicitud. `accepted`/`declined`/`fulfilled` llegan con la Fase 12c. */
+/** Estado de la solicitud. */
 const STATUS_LABEL: Record<string, string> = {
   new: 'Nueva',
   quoted: 'Cotizada',
@@ -32,8 +32,23 @@ const STATUS_LABEL: Record<string, string> = {
   fulfilled: 'Entregada',
 };
 
+/** Estado de la entrega de una licencia ya emitida. */
+const DELIVERY_LABEL: Record<string, string> = {
+  pending: 'sin descargar',
+  used: 'descargada',
+  expired: 'caducada sin descargar',
+};
+
 /** Estados desde los que todavía se puede (re)cotizar — igual que el backend. */
 const QUOTABLE = new Set(['new', 'quoted']);
+
+/** La licencia ya emitida de una solicitud, si la hay. */
+interface LicenseInfo {
+  licenseId: string;
+  issuedAt: string;
+  deliveryStatus: 'pending' | 'used' | 'expired';
+  deliveryExpiresAt: string;
+}
 
 /** Una solicitud de licencia, tal como la devuelve `GET /license-requests`. */
 interface LicenseRequest {
@@ -53,16 +68,20 @@ interface LicenseRequest {
   quotedConditions: string | null;
   quoteExpiresAt: string | null;
   quotedAt: string | null;
+  license: LicenseInfo | null;
 }
 
 /**
- * Bandeja de solicitudes de licencia. Fase 12a (lectura) + Fase 12b (cotizar):
- * el gestor responde precio + condiciones + hasta cuándo es válida la oferta.
- * Emitir la licencia y entregar el archivo firmado llegan en la Fase 12c.
+ * Bandeja de solicitudes de licencia. Fase 12a (lectura) + 12b (cotizar) +
+ * 12c (aceptar → emite la licencia y envía el enlace de entrega de un solo
+ * uso por correo). Quien "acepta" aquí es el gestor, confirmando que el
+ * cliente aceptó los términos por el canal que hayan usado.
  */
 function Inner() {
   const [requests, setRequests] = useState<LicenseRequest[] | null>(null);
   const [openQuoteId, setOpenQuoteId] = useState<string | null>(null);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const load = () =>
     apiFetch<LicenseRequest[]>('/license-requests')
@@ -87,6 +106,22 @@ function Inner() {
     });
     setOpenQuoteId(null);
     await load();
+  };
+
+  const accept = async (id: string) => {
+    if (!confirm('¿Aceptar esta solicitud? Se emitirá la licencia y se enviará el enlace de descarga.')) {
+      return;
+    }
+    setAcceptingId(id);
+    setAcceptError(null);
+    try {
+      await apiFetch(`/license-requests/${id}/accept`, { method: 'POST' });
+      await load();
+    } catch (err) {
+      setAcceptError(err instanceof ApiError ? err.message : 'No se pudo aceptar la solicitud.');
+    } finally {
+      setAcceptingId(null);
+    }
   };
 
   return (
@@ -156,18 +191,40 @@ function Inner() {
                     </div>
                   ) : null}
 
-                  {QUOTABLE.has(r.status) ? (
-                    <button
-                      type="button"
-                      className="link-button"
-                      style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}
-                      onClick={() =>
-                        setOpenQuoteId((cur) => (cur === r.requestId ? null : r.requestId))
-                      }
-                    >
-                      {r.quotedPrice ? 'Recotizar' : 'Cotizar'}{' '}
-                      {openQuoteId === r.requestId ? '▲' : '▾'}
-                    </button>
+                  {r.license ? (
+                    <p className="hint" style={{ marginTop: '0.4rem' }}>
+                      Licencia emitida {new Date(r.license.issuedAt).toLocaleDateString()} ·
+                      entrega {DELIVERY_LABEL[r.license.deliveryStatus]}
+                    </p>
+                  ) : null}
+
+                  <div className="inline-form wrap" style={{ marginTop: '0.5rem' }}>
+                    {QUOTABLE.has(r.status) ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        style={{ fontSize: '0.8rem' }}
+                        onClick={() =>
+                          setOpenQuoteId((cur) => (cur === r.requestId ? null : r.requestId))
+                        }
+                      >
+                        {r.quotedPrice ? 'Recotizar' : 'Cotizar'}{' '}
+                        {openQuoteId === r.requestId ? '▲' : '▾'}
+                      </button>
+                    ) : null}
+                    {r.status === 'quoted' ? (
+                      <button
+                        type="button"
+                        style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                        disabled={acceptingId === r.requestId}
+                        onClick={() => void accept(r.requestId)}
+                      >
+                        {acceptingId === r.requestId ? 'Emitiendo…' : 'Aceptar y emitir licencia'}
+                      </button>
+                    ) : null}
+                  </div>
+                  {acceptingId === null && acceptError ? (
+                    <p className="form-error">{acceptError}</p>
                   ) : null}
 
                   {openQuoteId === r.requestId ? (

@@ -91,7 +91,9 @@ nivel igual o superior al suyo.
   `POST /contact` (público, honeypot) · `GET|PATCH|DELETE /contact/messages` (`admin`+)
 - **Licenciamiento** (Fase 12a): `POST /license-requests` (público, honeypot, solo fotos
   publicadas) · `GET /license-requests` (bandeja, `admin`+) ·
-  `PATCH /license-requests/:id` (cotizar, `admin`+)
+  `PATCH /license-requests/:id` (cotizar, `admin`+) ·
+  `POST /license-requests/:id/accept` (emite la licencia, `admin`+) ·
+  `GET /deliveries/:token` (público, entrega el archivo — un solo uso)
 
 Referencia completa en Swagger (`http://localhost:3050/docs`, solo dev), en el portal de
 documentación (`http://localhost:8098`) y en Compodoc (`http://localhost:8099`).
@@ -126,7 +128,7 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-93 tests, 15 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+101 tests, 15 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), dos
 suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas), las
 unitarias de `SiteService` / `ContactService` / `ImagesService` / `LicensingService` (validación del hero publicado,

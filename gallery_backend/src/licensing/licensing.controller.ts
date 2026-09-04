@@ -56,4 +56,14 @@ export class LicensingController {
   ) {
     return this.licensing.quote(id, dto);
   }
+
+  @Roles('admin', 'director', 'super')
+  @Post(':id/accept')
+  @ApiOperation({
+    summary:
+      'Acepta una solicitud cotizada: emite la licencia y envía el enlace de entrega de un solo uso',
+  })
+  accept(@Param('id', ParseUUIDPipe) id: string) {
+    return this.licensing.accept(id);
+  }
 }

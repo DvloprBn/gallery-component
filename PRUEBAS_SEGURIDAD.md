@@ -13,21 +13,22 @@
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
-10b (curación), 11 (protección: marca de agua + derechos), 12a (solicitud de licencia) y 12b
-(cotizar) verificadas.** Verificados con `curl` / scripts contra el backend en vivo los puntos de
-OWASP API Top 10 que aplican, el bloque de **seguridad de archivos** (F1–F19), el de identidad de
-sitio/contacto (S1–S13), el de protección (P1–P8) y el de licenciamiento (L1–L11 — ver más abajo).
-Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con volumen/espera reales.
+10b (curación), 11 (protección: marca de agua + derechos) y 12a–12c (licenciamiento: solicitud,
+cotizar, emitir + entrega de un solo uso) verificadas.** Verificados con `curl` / scripts contra el
+backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de **seguridad de archivos**
+(F1–F19, incluida una corrección real en F19), el de identidad de sitio/contacto (S1–S13), el de
+protección (P1–P8) y el de licenciamiento (L1–L16 — ver más abajo). Pendiente para producción:
+confirmar API9 (inventario) y correr F7/F10 con volumen/espera reales.
 
 ### OWASP API Security Top 10 — cobertura tras la Fase 11
 
 | # | Categoría | Estado |
 |---|---|---|
-| API1 — IDOR | ✅ Probado: `/users/:id`, `/roles/:id` por jerarquía; **álbumes e imágenes privadas** filtran por dueño (otro usuario → 404/403); `/media/:key` privado exige firma HMAC. |
+| API1 — IDOR | ✅ Probado: `/users/:id`, `/roles/:id` por jerarquía; **álbumes e imágenes privadas** filtran por dueño (otro usuario → 404/403); `/media/:key` privado exige firma HMAC; **`/deliveries/:token`** — token inventado/caducado/ya usado → 404 idéntico, `updateMany` atómico impide servir dos veces por una carrera. |
 | API2 — Broken Authentication | ✅ Probado: anti-enumeración (`login/step1` idéntico), challenge token de 2FA nunca es sesión (401 en `/auth/me`), logout revoca el refresh en BD, reuso de refresh → cascada, JWT `HS256` fijo. |
 | API3 — Mass Assignment | ✅ Probado: propiedad extra en el body (`role_id` en registro; `is_read`/`messageId` en `POST /contact`; `status` en `POST /license-requests`) → 400 por `forbidNonWhitelisted`. |
 | API4 — Unrestricted Resource Consumption | ✅ Probado: fuerza bruta login/2FA → 429; **subida**: `limits.fileSize` → 413, `limitInputPixels` → 400, rate limit 120/h por usuario; **`POST /contact`** con `@Throttle(5/min)` → 429 en la ráfaga; `message` > 4000 → 400; **`POST /site/watermark`** con tope de 5 MB propio; **`POST /site/watermark/regenerate`** corre en segundo plano y una segunda llamada mientras hay una en curso no relanza el trabajo (evita apilar N regeneraciones simultáneas — ver P8). |
-| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site`, `POST/DELETE /site/watermark`, `POST/GET /site/watermark/regenerate`, `GET/PATCH/DELETE /contact/messages` y `GET/PATCH /license-requests`**: sin sesión → 401, `usuario` → 403, `admin`+ → 200/201/202. |
+| API5 — Broken Function Level Authorization | ✅ Probado: `usuario` → `GET /users` 403; jerarquía de niveles en `roles`/`users` (crear nivel ≥ propio → 403); `is_system` protegido (409); **`PATCH /site`, `POST/DELETE /site/watermark`, `POST/GET /site/watermark/regenerate`, `GET/PATCH/DELETE /contact/messages` y `GET/PATCH /license-requests` (+ `POST /license-requests/:id/accept`)**: sin sesión → 401, `usuario` → 403, `admin`+ → 200/201/202. |
 | API6 — Sensitive Business Flows | ✅ Parcial: registro y login limitados por el mismo mecanismo de API4. |
 | API7 — SSRF | No aplica todavía (sin "importar imagen por URL" ni OAuth). |
 | API8 — Security Misconfiguration | ✅ helmet, CORS explícito, Swagger solo dev, secretos fuera de git; cabeceras de seguridad del frontend (CSP env-aware, `X-Frame-Options`, HSTS en prod) — Fase 10 hardening. |
@@ -122,7 +123,7 @@ Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con volu
 | F16 | Fuga de fotos no publicadas (Fase 10b) | Una imagen `draft` / `archived` **nunca** aparece en `GET /g/:slug` ni en `GET /galleries` (ni con enlace de compartir válido); su clave de media no se entrega en ninguna respuesta pública, así que tampoco es alcanzable por `/media/:key` salvo que ya se conociera. El gestor (`GET /albums/:id/images`, autenticado, dueño/admin) sí las ve. `POST /albums/:id/images/status` valida que todos los ids sean del álbum (400 si no). | ✅ Probado 2026-09-03 (archivar 4 fotos → desaparecen de `/g` y del índice; id ajeno → 400) |
 | F17 | Ejecución de comandos vía `exiftool` (Fase 11) | `RightsMetadataService` usa `execFile` (nunca `exec`/una shell) con una lista **fija** de etiquetas — el valor de cada campo es el único dato del usuario, nunca el nombre de la etiqueta ni el binario a correr; no hay forma de inyectar un flag o un comando distinto por más rara que sea la cadena. Se sanean saltos de línea/caracteres de control antes de pasarlos. | ✅ Probado 2026-09-04 (`rightsStatement` con `\n` y un `-fake-flag` incrustado → se guarda como una sola línea, exiftool no lo interpreta como argumento aparte) |
 | F18 | Logo de marca de agua falsificado | `POST /site/watermark` valida por **contenido real** con `sharp` (igual que las fotos) antes de guardar — un archivo que no decodifica como imagen → 400, nunca se guarda | ✅ Probado 2026-09-04 (texto plano subido como PNG → 400) |
-| F19 | Original de alta resolución servido en público | Los derivados públicos llevan marca de agua; el original **nunca** se compone con la marca (D9) — sigue detrás del mismo control de acceso que ya existía (URL pública sin firma mostrando el archivo re-codificado, pero con la marca ausente solo si se pide expresamente por licencia). Ver P1–P8 para el detalle completo de la capa de protección. | ✅ Cubierto por diseño — cruzado con P1–P5 |
+| F19 | Original de alta resolución servido en público | **Corrección de esta misma ficha**: cuando se escribió (Fase 11) se dio por hecho que el original ya no era alcanzable en público — **era falso**. `GET /g/:slug` seguía devolviendo `urls.original` (el archivo limpio, sin marca, re-codificado a resolución completa) para álbumes `public`/`unlisted`, sin firma ni control alguno — cualquiera que abriera la respuesta JSON tenía el original gratis, lo que volvía inútil todo el punto de vender licencias. Encontrado y corregido en la Fase 12c: `MediaService.getGallery()` ya **no incluye `original`** en `urls` salvo para álbumes `private` (un enlace de compartir sí implica que el dueño confió el original a ese visitante concreto). El original solo sale ahora por la entrega de licencia de un solo uso (L12–L16 más abajo). | ✅ Corregido y probado 2026-09-04 — `GET /g/:slug` de un álbum público ya no trae `original` en ninguna imagen |
 
 ---
 
@@ -190,6 +191,11 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L9 | Cotizar una solicitud ya cerrada | `accepted`/`declined`/`fulfilled` → **400** ("ya no se puede cotizar"); `new`/`quoted` sí aceptan (recotizar es válido) | ✅ Probado 2026-09-04 |
 | L10 | Cotizar un `:id` inexistente | → **404** | ✅ Probado 2026-09-04 |
 | L11 | Validación de la cotización | `price` vacío → 400 (DTO); `conditions` con HTML/script → se escapa antes de ir al correo | ✅ Probado 2026-09-04 |
+| L12 | `POST /license-requests/:id/accept` RBAC (Fase 12c) | sin sesión → 401; `usuario` → 403; `admin`+ → 201 | ✅ Probado 2026-09-04 |
+| L13 | Aceptar fuera de orden | aceptar sin cotizar (`new`) → 400; aceptar una ya `accepted` → 400 (no se duplica la licencia) | ✅ Probado 2026-09-04 |
+| L14 | Entrega de un solo uso — la carrera | dos descargas del **mismo token**: la primera → 200 con el archivo; la segunda → **404**, idéntico a un token inválido. El "claim" es atómico (`updateMany` condicionado a `used_at: null`, se revisa `count`) — no hay ventana donde ambas puedan colar | ✅ Probado (unit, la carrera) + ✅ Probado en vivo (secuencial) 2026-09-04 |
+| L15 | Entrega — token inventado / caducado / ya usado | los tres casos devuelven el mismo 404 (indistinguibles, mismo principio que las URLs firmadas de `/media/:key`); nunca se toca el almacenamiento si el token no pasa la validación | ✅ Probado 2026-09-04 |
+| L16 | Entrega — el archivo servido | `Content-Disposition: attachment`; es el **original** limpio de resolución completa (no un derivado); lleva los metadatos de derechos **más una nota de a quién se licenció**, incrustada al vuelo solo para esa descarga (trazabilidad si el archivo se filtra después) | ✅ Probado 2026-09-04 (descarga real ≈500 KB) |
 
 ---
 

@@ -165,7 +165,16 @@ export class MediaService {
         altText: image.alt_text,
         caption: image.caption,
         urls: {
-          original: this.storage.urlFor(image.storage_key, visibility),
+          // El original de alta resolución (limpio, sin marca de agua — D9)
+          // NUNCA se ofrece en una galería `public`/`unlisted`: sería
+          // regalar exactamente lo que la Fase 12 vende con licencia. Un
+          // álbum `private` sigue incluyéndolo — un enlace de compartir
+          // implica que el dueño ya confió el original a ese visitante
+          // concreto, es un nivel de confianza distinto al de un enlace
+          // público/no listado que cualquiera puede encontrar.
+          ...(visibility === 'private'
+            ? { original: this.storage.urlFor(image.storage_key, visibility) }
+            : {}),
           ...Object.fromEntries(
             image.variants.map((v) => [
               v.label,

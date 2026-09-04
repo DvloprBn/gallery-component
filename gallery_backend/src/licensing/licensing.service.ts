@@ -4,9 +4,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { escapeHtml } from '../common/utils/escape-html.util';
+import { streamToBuffer } from '../common/utils/stream.util';
+import { generateOpaqueToken, sha256Hex } from '../common/utils/token.util';
 import { MailService } from '../mail/mail.service';
+import type { EmbeddableFormat } from '../protection/rights-metadata.service';
+import { RightsMetadataService } from '../protection/rights-metadata.service';
+import { resolveRights } from '../protection/rights.util';
 import { SiteService } from '../site/site.service';
 import { StorageService } from '../storage/storage.service';
 import type {
@@ -17,7 +23,18 @@ import type {
 /** Estados desde los que todavía se puede (re)cotizar una solicitud. */
 const QUOTABLE_STATUSES = new Set(['new', 'quoted']);
 
-/** Una solicitud de licencia tal como la ve el panel — con el contexto de la foto y su cotización. */
+/** Días que dura vigente un enlace de entrega antes de caducar (se consume en la primera descarga, lo que pase primero). */
+const DELIVERY_TOKEN_TTL_DAYS = 14;
+
+/** Estado de la entrega de una licencia, tal como lo ve el panel. */
+export interface LicenseView {
+  licenseId: string;
+  issuedAt: Date;
+  deliveryStatus: 'pending' | 'used' | 'expired';
+  deliveryExpiresAt: Date;
+}
+
+/** Una solicitud de licencia tal como la ve el panel — con el contexto de la foto, su cotización y su licencia (si ya se emitió). */
 export interface LicenseRequestView {
   requestId: string;
   imageId: string;
@@ -35,6 +52,7 @@ export interface LicenseRequestView {
   quotedConditions: string | null;
   quoteExpiresAt: Date | null;
   quotedAt: Date | null;
+  license: LicenseView | null;
 }
 
 /** Lo que necesita `toView` de una fila — evita depender del tipo inferido de Prisma. */
@@ -56,12 +74,32 @@ interface RequestRow {
     album: { title: string; slug: string };
     variants: { label: string; storage_key: string }[];
   };
+  license: {
+    license_id: string;
+    issued_at: Date;
+    delivery_tokens: { expires_at: Date; used_at: Date | null }[];
+  } | null;
 }
+
+/** Los `include` que necesita `toView` — se repiten en `list`, `quote` y `accept`. */
+const REQUEST_INCLUDE = {
+  image: {
+    include: {
+      album: { select: { title: true, slug: true } },
+      variants: true,
+    },
+  },
+  license: {
+    include: {
+      delivery_tokens: { orderBy: { created_at: 'desc' as const }, take: 1 },
+    },
+  },
+};
 
 /**
  * Solicitudes de licencia sobre fotos publicadas. Fase 12a (captura + aviso) +
- * Fase 12b (cotizar). Emitir la licencia y entregar el archivo firmado de un
- * solo uso son fases posteriores (12c).
+ * 12b (cotizar) + 12c (emitir la licencia y entregar el archivo original
+ * limpio por un enlace de un solo uso).
  */
 @Injectable()
 export class LicensingService {
@@ -72,6 +110,7 @@ export class LicensingService {
     private readonly mail: MailService,
     private readonly site: SiteService,
     private readonly storage: StorageService,
+    private readonly metadata: RightsMetadataService,
   ) {}
 
   /**
@@ -136,14 +175,7 @@ export class LicensingService {
     const rows = await this.prisma.license_requests.findMany({
       orderBy: { created_at: 'desc' },
       take: 200,
-      include: {
-        image: {
-          include: {
-            album: { select: { title: true, slug: true } },
-            variants: true,
-          },
-        },
-      },
+      include: REQUEST_INCLUDE,
     });
     return rows.map((r) => this.toView(r));
   }
@@ -183,14 +215,7 @@ export class LicensingService {
         quote_expires_at: dto.expiresAt ? new Date(dto.expiresAt) : null,
         quoted_at: new Date(),
       },
-      include: {
-        image: {
-          include: {
-            album: { select: { title: true, slug: true } },
-            variants: true,
-          },
-        },
-      },
+      include: REQUEST_INCLUDE,
     });
 
     await this.mail.send(
@@ -212,9 +237,161 @@ export class LicensingService {
     return this.toView(updated);
   }
 
+  /**
+   * Acepta una solicitud ya cotizada: emite la licencia, genera el enlace de
+   * entrega de un solo uso y avisa por correo al licenciatario. Quien
+   * "acepta" aquí es el gestor — confirma que el cliente aceptó los términos
+   * por el canal que hayan usado (correo, llamada) y lo marca en el panel;
+   * este proyecto no construye un portal de autoservicio para el cliente.
+   *
+   * @throws NotFoundException si la solicitud no existe.
+   * @throws BadRequestException si la solicitud no está cotizada — hace
+   *         falta un precio acordado antes de poder aceptarla.
+   */
+  async accept(requestId: string): Promise<LicenseRequestView> {
+    const request = await this.prisma.license_requests.findUnique({
+      where: { request_id: requestId },
+      include: { image: { include: { album: { select: { title: true, slug: true } } } } },
+    });
+    if (!request) {
+      throw new NotFoundException('Solicitud no encontrada.');
+    }
+    if (request.status !== 'quoted') {
+      throw new BadRequestException(
+        'Solo se puede aceptar una solicitud que ya tenga una cotización.',
+      );
+    }
+
+    const rawToken = generateOpaqueToken(32);
+    const expiresAt = new Date(Date.now() + DELIVERY_TOKEN_TTL_DAYS * 86_400_000);
+
+    await this.prisma.$transaction(async (tx) => {
+      const license = await tx.licenses.create({
+        data: {
+          request_id: request.request_id,
+          image_id: request.image_id,
+          licensee_name: request.requester_name,
+          licensee_email: request.requester_email,
+          intended_use: request.intended_use,
+          price: request.quoted_price,
+          conditions: request.quoted_conditions,
+        },
+      });
+      await tx.delivery_tokens.create({
+        data: {
+          license_id: license.license_id,
+          token_hash: sha256Hex(rawToken),
+          expires_at: expiresAt,
+        },
+      });
+      await tx.license_requests.update({
+        where: { request_id: requestId },
+        data: { status: 'accepted' },
+      });
+    });
+
+    const backend = (process.env.BACKEND_URL ?? '').replace(/\/$/, '');
+    const downloadUrl = `${backend}/deliveries/${rawToken}`;
+
+    await this.mail.send(
+      request.requester_email,
+      `Tu licencia está lista — ${escapeHtml(request.image.album.title)}`,
+      `<p>Hola ${escapeHtml(request.requester_name)},</p>` +
+        `<p>Tu licencia para una foto de «${escapeHtml(request.image.album.title)}» quedó emitida. ` +
+        `Puedes descargar el archivo en alta resolución aquí:</p>` +
+        `<p><a href="${downloadUrl}">${downloadUrl}</a></p>` +
+        `<p>El enlace funciona <strong>una sola vez</strong> y caduca en ${DELIVERY_TOKEN_TTL_DAYS} días.</p>`,
+    );
+
+    const updated = await this.prisma.license_requests.findUniqueOrThrow({
+      where: { request_id: requestId },
+      include: REQUEST_INCLUDE,
+    });
+    return this.toView(updated);
+  }
+
+  /**
+   * Consume un enlace de entrega: valida el token, lo marca usado de forma
+   * **atómica** (para que dos descargas simultáneas del mismo enlace no
+   * sirvan ambas el archivo) y devuelve el original limpio — con los
+   * metadatos de derechos **y** una nota de a quién se licenció, incrustados
+   * al vuelo para esta descarga (si el archivo se filtra después, queda
+   * quién lo recibió).
+   *
+   * @param rawToken - El token tal como llega en la URL (`/deliveries/:token`).
+   * @returns El stream del archivo + su nombre de descarga sugerido.
+   * @throws NotFoundException si el token no existe, ya se usó, caducó, o el
+   *         objeto ya no está en el almacenamiento — siempre el mismo error,
+   *         nunca se revela cuál de esos fue (mismo principio que las URLs
+   *         firmadas de `/media/:key`).
+   */
+  async consumeDelivery(
+    rawToken: string,
+  ): Promise<{ stream: NodeJS.ReadableStream; contentType: string; bytes: number; filename: string }> {
+    const tokenHash = sha256Hex(rawToken);
+    const token = await this.prisma.delivery_tokens.findUnique({
+      where: { token_hash: tokenHash },
+      include: {
+        license: {
+          include: {
+            image: true,
+          },
+        },
+      },
+    });
+    if (!token || token.used_at || token.expires_at.getTime() < Date.now()) {
+      throw new NotFoundException();
+    }
+
+    // Consumo atómico: si dos peticiones llegan a la vez con el mismo token,
+    // solo una gana la actualización (`count === 1`); la otra ve el token ya
+    // usado y falla, en vez de que ambas reciban el archivo.
+    const claim = await this.prisma.delivery_tokens.updateMany({
+      where: { delivery_token_id: token.delivery_token_id, used_at: null },
+      data: { used_at: new Date() },
+    });
+    if (claim.count !== 1) {
+      throw new NotFoundException();
+    }
+
+    const image = token.license.image;
+    const object = await this.storage.read(image.storage_key);
+    if (!object) {
+      throw new NotFoundException();
+    }
+
+    const rightsDefaults = await this.site.getRightsDefaults();
+    const baseRights = resolveRights(rightsDefaults, image.rights);
+    const licenseeNote =
+      `Licencia otorgada a ${token.license.licensee_name} <${token.license.licensee_email}> ` +
+      `para uso ${token.license.intended_use}` +
+      (token.license.conditions ? `: ${token.license.conditions}` : '') +
+      '.';
+    const buffer = await streamToBuffer(object.stream);
+    const format: EmbeddableFormat = image.mime_type === 'image/png' ? 'png' : 'jpeg';
+    const withLicenseeInfo = await this.metadata.embed(buffer, format, {
+      ...baseRights,
+      rightsStatement: `${baseRights.rightsStatement} ${licenseeNote}`.trim(),
+    });
+
+    await this.prisma.license_requests.updateMany({
+      where: { request_id: token.license.request_id },
+      data: { status: 'fulfilled' },
+    });
+
+    const ext = format === 'png' ? 'png' : 'jpg';
+    return {
+      stream: bufferToStream(withLicenseeInfo),
+      contentType: object.contentType,
+      bytes: withLicenseeInfo.byteLength,
+      filename: `licencia-${token.license.license_id.slice(0, 8)}.${ext}`,
+    };
+  }
+
   /** Proyecta una fila (con sus relaciones ya incluidas) a la forma del panel. */
   private toView(row: RequestRow): LicenseRequestView {
     const thumb = row.image.variants.find((v) => v.label === 'thumb');
+    const delivery = row.license?.delivery_tokens[0] ?? null;
     return {
       requestId: row.request_id,
       imageId: row.image_id,
@@ -232,6 +409,24 @@ export class LicensingService {
       quotedConditions: row.quoted_conditions,
       quoteExpiresAt: row.quote_expires_at,
       quotedAt: row.quoted_at,
+      license:
+        row.license && delivery
+          ? {
+              licenseId: row.license.license_id,
+              issuedAt: row.license.issued_at,
+              deliveryStatus: delivery.used_at
+                ? 'used'
+                : delivery.expires_at.getTime() < Date.now()
+                  ? 'expired'
+                  : 'pending',
+              deliveryExpiresAt: delivery.expires_at,
+            }
+          : null,
     };
   }
+}
+
+/** Envuelve un buffer ya en memoria como stream — lo que espera el controller de entrega. */
+function bufferToStream(buffer: Buffer): NodeJS.ReadableStream {
+  return Readable.from(buffer);
 }

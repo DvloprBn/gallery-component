@@ -1,6 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import type { PrismaService } from '../common/prisma/prisma.service';
 import type { MailService } from '../mail/mail.service';
+import type { RightsMetadataService } from '../protection/rights-metadata.service';
 import type { SiteService } from '../site/site.service';
 import type { StorageService } from '../storage/storage.service';
 import { LicensingService } from './licensing.service';
@@ -26,12 +28,18 @@ describe('LicensingService', () => {
       create: jest.Mock;
       findMany: jest.Mock;
       findUnique: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
     };
+    licenses: { create: jest.Mock };
+    delivery_tokens: { create: jest.Mock; findUnique: jest.Mock; updateMany: jest.Mock };
+    $transaction: jest.Mock;
   };
   let mail: { send: jest.Mock };
-  let site: { get: jest.Mock };
-  let storage: { urlFor: jest.Mock };
+  let site: { get: jest.Mock; getRightsDefaults: jest.Mock };
+  let storage: { urlFor: jest.Mock; read: jest.Mock };
+  let metadata: { embed: jest.Mock };
   let service: LicensingService;
 
   const quotableRow = {
@@ -39,7 +47,8 @@ describe('LicensingService', () => {
     requester_name: 'Editor XYZ',
     requester_email: 'editor@revista.com',
     status: 'new',
-    image: { album: { title: 'Calle', slug: 'calle-abc' } },
+    image: { album: { title: 'Calle', slug: 'calle-abc' }, variants: [] },
+    license: null,
   };
 
   beforeEach(() => {
@@ -49,6 +58,7 @@ describe('LicensingService', () => {
         create: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(quotableRow),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(quotableRow),
         update: jest.fn().mockImplementation(({ data }) =>
           Promise.resolve({
             ...quotableRow,
@@ -56,18 +66,46 @@ describe('LicensingService', () => {
             image: { ...quotableRow.image, variants: [] },
           }),
         ),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      licenses: { create: jest.fn().mockResolvedValue({ license_id: 'lic-1' }) },
+      delivery_tokens: {
+        create: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      $transaction: jest.fn().mockImplementation((fn) => fn(prisma)),
     };
     mail = { send: jest.fn().mockResolvedValue({ delivered: false }) };
-    site = { get: jest.fn().mockResolvedValue({ contactEmail: 'mara@example.com' }) };
-    storage = { urlFor: jest.fn((key: string) => `https://cdn.test/${key}`) };
+    site = {
+      get: jest.fn().mockResolvedValue({ contactEmail: 'mara@example.com' }),
+      getRightsDefaults: jest.fn().mockResolvedValue({
+        rightsHolder: 'Mara Solís',
+        creator: 'Mara Solís',
+        creditLine: '',
+        rightsStatement: '© Mara Solís',
+        licenseTerms: '',
+        licensorUrl: '',
+      }),
+    };
+    storage = {
+      urlFor: jest.fn((key: string) => `https://cdn.test/${key}`),
+      read: jest.fn().mockResolvedValue({
+        stream: Readable.from([Buffer.from('clean-original-bytes')]),
+        contentType: 'image/jpeg',
+        bytes: 21,
+      }),
+    };
+    metadata = { embed: jest.fn().mockImplementation((buf) => Promise.resolve(buf)) };
     service = new LicensingService(
       prisma as unknown as PrismaService,
       mail as unknown as MailService,
       site as unknown as SiteService,
       storage as unknown as StorageService,
+      metadata as unknown as RightsMetadataService,
     );
     process.env.MAIL_FROM_ADDRESS = 'buzon@example.com';
+    process.env.BACKEND_URL = 'http://localhost:3050';
   });
 
   it('rechaza una foto inexistente (sin guardar ni avisar)', async () => {
@@ -237,6 +275,124 @@ describe('LicensingService', () => {
       expect(
         prisma.license_requests.update.mock.calls[0][0].data.quote_expires_at,
       ).toBeNull();
+    });
+  });
+
+  describe('accept()', () => {
+    it('rechaza una solicitud inexistente', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue(null);
+      await expect(service.accept('r1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.licenses.create).not.toHaveBeenCalled();
+    });
+
+    it('rechaza aceptar una solicitud que todavía no tiene cotización', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue({ ...quotableRow, status: 'new' });
+      await expect(service.accept('r1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.licenses.create).not.toHaveBeenCalled();
+    });
+
+    it('emite la licencia, el token de entrega, y avisa por correo con el enlace', async () => {
+      prisma.license_requests.findUnique.mockResolvedValue({
+        ...quotableRow,
+        status: 'quoted',
+        quoted_price: '$500 USD',
+        quoted_conditions: 'Uso editorial',
+      });
+
+      await service.accept('r1');
+
+      expect(prisma.licenses.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          request_id: 'r1',
+          licensee_email: 'editor@revista.com',
+          price: '$500 USD',
+        }),
+      });
+      expect(prisma.delivery_tokens.create).toHaveBeenCalled();
+      expect(
+        prisma.license_requests.update,
+      ).toHaveBeenCalledWith({
+        where: { request_id: 'r1' },
+        data: { status: 'accepted' },
+      });
+      expect(mail.send).toHaveBeenCalledTimes(1);
+      const [to, , html] = mail.send.mock.calls[0];
+      expect(to).toBe('editor@revista.com');
+      expect(html).toContain('http://localhost:3050/deliveries/');
+    });
+  });
+
+  describe('consumeDelivery()', () => {
+    const validToken = {
+      delivery_token_id: 'dt-1',
+      used_at: null,
+      expires_at: new Date(Date.now() + 86_400_000),
+      license: {
+        license_id: 'lic-1',
+        licensee_name: 'Editor XYZ',
+        licensee_email: 'editor@revista.com',
+        intended_use: 'editorial',
+        conditions: null,
+        request_id: 'r1',
+        image: { storage_key: 'orig.jpg', mime_type: 'image/jpeg', rights: null },
+      },
+    };
+
+    it('token inexistente -> 404', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue(null);
+      await expect(service.consumeDelivery('bad')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.delivery_tokens.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('token ya usado -> 404 (sin volver a marcarlo ni servir el archivo)', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue({
+        ...validToken,
+        used_at: new Date(),
+      });
+      await expect(service.consumeDelivery('used')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.delivery_tokens.updateMany).not.toHaveBeenCalled();
+      expect(storage.read).not.toHaveBeenCalled();
+    });
+
+    it('token caducado -> 404', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue({
+        ...validToken,
+        expires_at: new Date(Date.now() - 1000),
+      });
+      await expect(service.consumeDelivery('expired')).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.read).not.toHaveBeenCalled();
+    });
+
+    it('la carrera de dos descargas simultáneas: la segunda pierde el "claim" atómico -> 404', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue(validToken);
+      prisma.delivery_tokens.updateMany.mockResolvedValue({ count: 0 }); // otra petición ya lo marcó
+      await expect(service.consumeDelivery('raw')).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.read).not.toHaveBeenCalled();
+    });
+
+    it('sirve el archivo, marca la solicitud como "fulfilled" e incrusta al licenciatario en los metadatos', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue(validToken);
+
+      const result = await service.consumeDelivery('raw-token');
+
+      expect(prisma.delivery_tokens.updateMany).toHaveBeenCalledWith({
+        where: { delivery_token_id: 'dt-1', used_at: null },
+        data: { used_at: expect.any(Date) },
+      });
+      expect(storage.read).toHaveBeenCalledWith('orig.jpg');
+      expect(metadata.embed).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        'jpeg',
+        expect.objectContaining({
+          rightsStatement: expect.stringContaining('Editor XYZ'),
+        }),
+      );
+      expect(prisma.license_requests.updateMany).toHaveBeenCalledWith({
+        where: { request_id: 'r1' },
+        data: { status: 'fulfilled' },
+      });
+      expect(result.filename).toMatch(/^licencia-.*\.jpg$/);
+      expect(result.contentType).toBe('image/jpeg');
     });
   });
 });

@@ -188,6 +188,7 @@ model images {
   owner           users             @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
   variants        image_variants[]
   license_requests license_requests[]
+  licenses         licenses[]
 
   @@index([album_id])
   @@index([album_id, status])
@@ -220,10 +221,55 @@ model license_requests {
   quote_expires_at  DateTime? @db.Timestamptz(6) // hasta cuándo es válida ESTA cotización
   quoted_at         DateTime? @db.Timestamptz(6)
 
-  image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  image   images    @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  license licenses?
 
   @@index([status, created_at])
   @@index([image_id])
+}
+
+/**
+ * Licencia emitida (Fase 12c) — se crea al aceptar una solicitud ya cotizada.
+ * 1:1 con la solicitud que la originó; guarda una copia de los términos
+ * (precio/condiciones) tal como se aceptaron, independiente de que la
+ * cotización de la solicitud se edite después.
+ */
+model licenses {
+  license_id     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  request_id     String   @unique @db.Uuid
+  image_id       String   @db.Uuid
+  licensee_name  String   @db.VarChar(150)
+  licensee_email String   @db.VarChar(255)
+  intended_use   String   @db.VarChar(20)
+  price          String?  @db.VarChar(200)
+  conditions     String?  @db.VarChar(1000)
+  issued_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  request         license_requests  @relation(fields: [request_id], references: [request_id], onDelete: Cascade)
+  image           images            @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  delivery_tokens delivery_tokens[]
+
+  @@index([image_id])
+}
+
+/**
+ * Entrega de un solo uso (Fase 12c): la URL que recibe el licenciatario por
+ * correo. Mismo patrón que `album_share_tokens` (`token_hash` = sha256 del
+ * token opaco, nunca el token en claro) más `used_at` — a diferencia de un
+ * enlace de compartir (válido hasta que expira o se revoca), este se
+ * **consume**: la primera descarga exitosa lo inutiliza.
+ */
+model delivery_tokens {
+  delivery_token_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  license_id        String    @db.Uuid
+  token_hash        String    @unique @db.VarChar(64)
+  expires_at        DateTime  @db.Timestamptz(6)
+  used_at           DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  license licenses @relation(fields: [license_id], references: [license_id], onDelete: Cascade)
+
+  @@index([license_id])
 }
 
 // Derivados responsivos generados por el pipeline. Se sirven ESTOS, nunca

@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { v2 as cloudinary } from 'cloudinary';
 import type {
   MediaVisibility,
+  ObjectStream,
   StorageDriver,
   StoredObject,
 } from './storage-driver.interface';
@@ -105,6 +107,38 @@ export class CloudinaryStorageDriver implements StorageDriver {
       sign_url: true,
       expires_at: Math.floor(Date.now() / 1000) + ttlSeconds,
     });
+  }
+
+  /**
+   * Relee un objeto ya subido — hace falta para regenerar derivados (Fase 11)
+   * y para entregar el original bajo licencia (Fase 12c), donde el backend
+   * necesita los bytes de vuelta, no solo una URL para el navegador.
+   * Cloudinary no expone un "descargar tal cual" nativo por SDK aquí, así que
+   * se baja por HTTPS desde su propia URL (firmada si el recurso es
+   * `authenticated`) — la misma URL que ya se sabe construir para servir.
+   *
+   * @param key - La clave devuelta por `put` (`"<deliveryType>:<publicId>"`).
+   * @returns El stream + metadatos, o `null` si Cloudinary respondió con error.
+   */
+  async read(key: string): Promise<ObjectStream | null> {
+    const { deliveryType } = this.parseKey(key);
+    const url =
+      deliveryType === 'authenticated' ? this.signedUrl(key, 120) : this.publicUrl(key);
+    try {
+      const response = await fetch(url);
+      if (!response.ok || !response.body) {
+        this.logger.warn(`No se pudo releer ${key} de Cloudinary: HTTP ${response.status}`);
+        return null;
+      }
+      return {
+        stream: Readable.fromWeb(response.body as never),
+        contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+        bytes: Number(response.headers.get('content-length') ?? 0),
+      };
+    } catch (error) {
+      this.logger.warn(`No se pudo releer ${key} de Cloudinary: ${(error as Error).message}`);
+      return null;
+    }
   }
 
   /** Separa `"<deliveryType>:<publicId>"`. */

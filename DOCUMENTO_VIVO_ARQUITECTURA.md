@@ -1478,3 +1478,83 @@ Solicitud inexistente → 404; recotizar desde `quoted` → permitido; cotizar d
 `price` vacío → 400 (DTO); RBAC (401/403/200); el correo llega con el precio y las condiciones
 escapadas. `next build` OK (16 rutas, sin cambio de conteo — se amplió la página existente).
 `tsc` OK. **93 tests / 15 suites** (`licensing.service.spec.ts` gana 6 tests para `quote()`).
+
+## 17. Fase 12c — Licenciamiento: emitir + entrega de un solo uso (completada y verificada, 2026-09-04)
+
+Tercer y más complejo tramo de la Fase 12: al aceptar una solicitud ya cotizada se emite la
+licencia y se entrega el archivo original limpio por un enlace que **se consume**, no que expira.
+
+### 17.0 Hallazgo real (corregido antes de seguir): el original ya se filtraba
+
+Antes de construir la entrega, se revisó qué hacía falta proteger — y resultó que **ya no había
+nada que proteger**: `MediaService.getGallery()` (sin tocar desde la Fase 3) seguía devolviendo
+`urls.original` — el archivo limpio, sin marca, a resolución completa — para **cualquier** álbum
+`public`/`unlisted`, sin firma ni control. Verificado en vivo: `GET /g/calle-838207` entregaba una
+URL que, al abrirse, descargaba un JPEG de 2400×1600 sin marca de agua. Esto volvía inútil toda la
+Fase 11 (¿para qué pagar una licencia de algo que ya es gratis en la propia galería?) — la ficha
+F19 de `PRUEBAS_SEGURIDAD.md`, escrita en la Fase 11, había dado por sentado que esto ya estaba
+resuelto; no lo estaba.
+
+**Arreglo**: `getGallery()` ya no incluye `original` en `urls` salvo para álbumes `private` (un
+enlace de compartir privado sí implica que el dueño confió el original a ese visitante concreto —
+nivel de confianza distinto al de un enlace público que cualquiera puede encontrar). El frontend no
+necesitó cambios: `Lightbox`/`GalleryImage` ya preferían `large` sobre `original`.
+
+### 17.1 Modelo de datos
+
+Migración `20260904221657_licenses_delivery`:
+
+- `licenses` — 1:1 con la `license_request` que la originó; guarda una **copia** de los términos
+  aceptados (precio/condiciones) en el momento de aceptar, independiente de que la solicitud se
+  vuelva a tocar después.
+- `delivery_tokens` — mismo patrón que `album_share_tokens` (`token_hash` = sha256 del token
+  opaco, nunca el token en claro) más `used_at`: a diferencia de un enlace de compartir (válido
+  hasta que expira o se revoca), este se **consume** — la primera descarga exitosa lo inutiliza.
+
+### 17.2 Backend
+
+- `LicensingService.accept(requestId)`: solo desde `status === 'quoted'` (400 si no — hace falta un
+  precio acordado). Quien "acepta" es el **gestor** — confirma que el cliente aceptó los términos
+  por el canal que hayan usado (correo, llamada) y lo marca en el panel; este proyecto no construye
+  un portal de autoservicio para que el cliente acepte él mismo (eso sería una fase aparte). Crea
+  `license` + `delivery_tokens` en una transacción, pasa la solicitud a `accepted`, manda el enlace
+  de descarga por correo.
+- `LicensingService.consumeDelivery(rawToken)`: valida el token (existe, no usado, no caducado —
+  los tres casos dan el mismo 404, igual que las URLs firmadas de `/media/:key`); lo marca usado
+  con un **`updateMany` atómico** condicionado a `used_at: null` — si dos descargas llegan a la vez
+  con el mismo token, `count` decide cuál gana; la otra ve 404. Lee el original limpio
+  (`StorageService.read`), le **incrusta una nota de a quién se licenció** (nombre, correo, uso,
+  condiciones) sobre los metadatos de derechos existentes — al vuelo, solo para esa descarga, nunca
+  se persiste una copia aparte — y lo sirve. Al terminar, pasa la solicitud a `fulfilled`.
+- `DeliveryController` (`GET /deliveries/:token`, `@Public()`): el control de acceso es el token en
+  la URL, no una sesión — mismo principio que `/media/:key` firmado. Cabeceras: `Content-Disposition:
+  attachment`, `Cache-Control: private, no-store`, `Cross-Origin-Resource-Policy: cross-origin`.
+- `CloudinaryStorageDriver.read()` (nuevo): hasta ahora `storage.read()` solo funcionaba con el
+  driver de disco (limitación documentada en la Fase 11, §14.6). Como la entrega es el corazón de
+  la Fase 12 — no una comodidad de administrador como la regeneración — se implementó de verdad:
+  baja el recurso por HTTPS desde su propia URL (firmada si es `authenticated`) y devuelve el
+  stream. **Implementado, no verificado en vivo contra una cuenta Cloudinary real en esta sesión**
+  (el entorno de desarrollo usa `STORAGE_DRIVER=disk`, que sí se probó de punta a punta) — se
+  documenta la diferencia con honestidad en vez de darla por buena.
+
+### 17.3 Frontend
+
+`/studio/licencias` gana un botón **"Aceptar y emitir licencia"** (solo visible en `quoted`, con
+confirmación) y muestra, si ya hay licencia, cuándo se emitió y el estado de la entrega (`sin
+descargar` / `descargada` / `caducada sin descargar`).
+
+### 17.4 Verificación real
+
+Flujo completo de punta a punta contra el backend en vivo: crear solicitud → cotizar → RBAC de
+aceptar (401/403) → aceptar sin cotizar → 400 → aceptar → 201, licencia + token creados → re-aceptar
+→ 400 → **primera descarga → 200, archivo real de ~500 KB con `Content-Disposition: attachment`** →
+**segunda descarga del mismo token → 404** → solicitud pasa a `fulfilled`. Token inventado → 404.
+La carrera de dos descargas simultáneas se probó como test unitario (`consumeDelivery` con
+`updateMany` devolviendo `count: 0` en la segunda). El envío real de correo falló en este entorno
+por un dominio de remitente sin verificar en Resend (`MAIL_FROM_ADDRESS` de ejemplo) — degrada
+igual que en el resto del proyecto: la licencia y el token ya quedaron creados en base de datos
+antes del intento de correo, el fallo de envío no revierte nada.
+
+**101 tests / 15 suites** (`licensing.service.spec.ts` gana 8 tests para `accept()` y
+`consumeDelivery()`, incluida la carrera). `tsc` OK. `next build` (prod) OK, 16 rutas (sin cambio
+de conteo). Bloque L12–L16 y corrección de F19 en `PRUEBAS_SEGURIDAD.md`.
