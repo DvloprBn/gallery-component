@@ -46,8 +46,8 @@ interface LicenseInfo {
 /** Una solicitud de licencia, tal como la devuelve `GET /license-requests`. */
 interface LicenseRequest {
   requestId: string;
-  imageId: string;
-  imageThumbUrl: string | null;
+  mediaId: string;
+  mediaThumbUrl: string | null;
   collectionTitle: string;
   collectionSlug: string;
   requesterName: string;
@@ -163,10 +163,10 @@ function Inner() {
           <ul className="album-list">
             {visible.map((r) => (
               <li key={r.requestId} className="album-list__item">
-                {r.imageThumbUrl ? (
+                {r.mediaThumbUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={r.imageThumbUrl}
+                    src={r.mediaThumbUrl}
                     alt=""
                     style={{
                       width: 64,

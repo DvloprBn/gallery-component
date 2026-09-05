@@ -17,7 +17,7 @@ export type IntendedUse = (typeof INTENDED_USES)[number];
 /** `POST /license-requests` — solicitud pública de licencia sobre una foto. */
 export class SubmitLicenseRequestDto {
   @IsUUID()
-  imageId!: string;
+  mediaId!: string;
 
   @IsString()
   @IsNotEmpty()

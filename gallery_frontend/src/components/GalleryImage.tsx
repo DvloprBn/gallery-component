@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { GalleryImage as GalleryImageData } from '@/lib/gallery-schema';
+import type { GalleryMedia as GalleryMediaData } from '@/lib/gallery-schema';
 import { BlurhashCanvas } from './BlurhashCanvas';
 
 /** Orden de preferencia de derivados para construir el `srcset`. */
@@ -34,25 +34,25 @@ function buildSrcSet(urls: Record<string, string>): {
  * (con `srcset` de los derivados, carga perezosa y decodificación asíncrona)
  * que aparece con un fundido al terminar de cargar.
  *
- * @param props.image - Los datos de la imagen.
+ * @param props.media - Los datos del elemento (foto o video).
  * @param props.sizes - El atributo `sizes` (lo fija el layout que la contiene).
  * @param props.priority - Si es de las primeras (no perezosa).
  * @param props.onOpen - Se llama al hacer clic (abre el lightbox).
  */
 export function GalleryImage({
-  image,
+  media,
   sizes,
   priority = false,
   onOpen,
 }: {
-  image: GalleryImageData;
+  media: GalleryMediaData;
   sizes: string;
   priority?: boolean;
   onOpen?: () => void;
 }) {
   const [loaded, setLoaded] = useState(false);
-  const { src, srcSet } = buildSrcSet(image.urls);
-  const ratio = image.width / image.height;
+  const { src, srcSet } = buildSrcSet(media.urls);
+  const ratio = media.width / media.height;
 
   return (
     <figure
@@ -68,15 +68,15 @@ export function GalleryImage({
         }
       }}
     >
-      <BlurhashCanvas hash={image.placeholder} />
+      <BlurhashCanvas hash={media.placeholder} />
       <img
         className="g-img"
         src={src}
         srcSet={srcSet || undefined}
         sizes={sizes}
-        width={image.width}
-        height={image.height}
-        alt={image.altText ?? ''}
+        width={media.width}
+        height={media.height}
+        alt={media.altText ?? ''}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
         onLoad={() => setLoaded(true)}
@@ -88,8 +88,8 @@ export function GalleryImage({
         onDragStart={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
       />
-      {image.caption ? (
-        <figcaption className="g-caption">{image.caption}</figcaption>
+      {media.caption ? (
+        <figcaption className="g-caption">{media.caption}</figcaption>
       ) : null}
     </figure>
   );

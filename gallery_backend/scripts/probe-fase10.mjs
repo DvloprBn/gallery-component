@@ -54,12 +54,12 @@ const snap = await (await fetch(`${API}/site`)).json();
   check('2.3 PATCH /site como admin → 200', adminR.status === 200, `got ${adminR.status}`);
 }
 
-// ═══ 3. PATCH /site — validación del heroImageId ═══
+// ═══ 3. PATCH /site — validación del heroMediaId ═══
 {
   // 3.1 UUID inexistente → 400
   const ghost = await fetch(`${API}/site`, { method: 'PATCH', headers: j(superc),
-    body: JSON.stringify({ heroImageId: '00000000-0000-4000-8000-000000000000' }) });
-  check('3.1 heroImageId inexistente → 400', ghost.status === 400, `got ${ghost.status}`);
+    body: JSON.stringify({ heroMediaId: '00000000-0000-4000-8000-000000000000' }) });
+  check('3.1 heroMediaId inexistente → 400', ghost.status === 400, `got ${ghost.status}`);
 
   // 3.2 imagen de un álbum NO público → 400
   const priv = await (await fetch(`${API}/albums`, { method: 'POST', headers: j(superc),
@@ -68,17 +68,17 @@ const snap = await (await fetch(`${API}/site`)).json();
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   const fd = new FormData();
   fd.append('file', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'p.png');
-  const up = await fetch(`${API}/albums/${priv.album_id}/images`, { method: 'POST', headers: { cookie: superc }, body: fd });
-  const img = await up.json();
+  const up = await fetch(`${API}/albums/${priv.album_id}/media`, { method: 'POST', headers: { cookie: superc }, body: fd });
+  const md = await up.json();
   const privHero = await fetch(`${API}/site`, { method: 'PATCH', headers: j(superc),
-    body: JSON.stringify({ heroImageId: img.imageId ?? img.image_id }) });
-  check('3.2 heroImageId de álbum privado → 400', privHero.status === 400, `got ${privHero.status}`);
+    body: JSON.stringify({ heroMediaId: md.mediaId ?? md.media_id }) });
+  check('3.2 heroMediaId de álbum privado → 400', privHero.status === 400, `got ${privHero.status}`);
   await fetch(`${API}/albums/${priv.album_id}`, { method: 'DELETE', headers: { cookie: superc } });
 
   // 3.3 null limpia el hero sin romper
-  const clr = await fetch(`${API}/site`, { method: 'PATCH', headers: j(superc), body: '{"heroImageId":null}' });
+  const clr = await fetch(`${API}/site`, { method: 'PATCH', headers: j(superc), body: '{"heroMediaId":null}' });
   const clrBody = await clr.json();
-  check('3.3 heroImageId:null → 200 y hero=null', clr.status === 200 && clrBody.hero === null, `got ${clr.status}`);
+  check('3.3 heroMediaId:null → 200 y hero=null', clr.status === 200 && clrBody.hero === null, `got ${clr.status}`);
 }
 
 // ═══ 4. GET /galleries?featured=true — no filtra no-públicas ═══
@@ -88,7 +88,7 @@ const snap = await (await fetch(`${API}/site`)).json();
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   const fd = new FormData();
   fd.append('file', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'p.png');
-  await fetch(`${API}/albums/${unl.album_id}/images`, { method: 'POST', headers: { cookie: superc }, body: fd });
+  await fetch(`${API}/albums/${unl.album_id}/media`, { method: 'POST', headers: { cookie: superc }, body: fd });
   const feat = await (await fetch(`${API}/galleries?featured=true`)).json();
   check('4.1 unlisted+featured NO aparece en ?featured=true',
     !feat.some((c) => c.slug === unl.slug), `slugs: ${feat.map((c) => c.slug).join(',')}`);
@@ -165,10 +165,10 @@ for (const id of [...new Set(created)]) {
 await fetch(`${API}/site`, { method: 'PATCH', headers: j(superc), body: JSON.stringify({
   siteTitle: snap.siteTitle, ownerName: snap.ownerName, tagline: snap.tagline, bio: snap.bio,
   aboutBody: snap.aboutBody, contactEmail: snap.contactEmail, contactIntro: snap.contactIntro,
-  instagram: snap.instagram, heroImageId: snap.hero?.imageId ?? null,
+  instagram: snap.instagram, heroMediaId: snap.hero?.mediaId ?? null,
 }) });
 const restored = await (await fetch(`${API}/site`)).json();
-check('CLEANUP site_settings restaurado', restored.hero?.imageId === (snap.hero?.imageId ?? undefined) || (!restored.hero && !snap.hero), `hero ${restored.hero?.imageId}`);
+check('CLEANUP site_settings restaurado', restored.hero?.mediaId === (snap.hero?.mediaId ?? undefined) || (!restored.hero && !snap.hero), `hero ${restored.hero?.mediaId}`);
 
 console.log('\n' + results.join('\n'));
 console.log(`\n${pass} PASS / ${fail} FAIL`);

@@ -46,7 +46,7 @@ export interface PublicGalleryCard {
   slug: string;
   title: string;
   description: string | null;
-  imageCount: number;
+  mediaCount: number;
   coverUrl: string | null;
 }
 
@@ -76,7 +76,7 @@ export async function fetchPublicGalleries(
 
 /** La imagen del hero de la portada, con sus URLs de entrega ya resueltas. */
 export interface SiteHero {
-  imageId: string;
+  mediaId: string;
   width: number;
   height: number;
   placeholder: string | null;

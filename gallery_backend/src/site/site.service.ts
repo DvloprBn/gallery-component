@@ -12,8 +12,8 @@ import { StorageService } from '../storage/storage.service';
 import { UpdateSiteDto } from './dto/site.dto';
 
 /** La imagen del hero, ya con sus URLs de entrega resueltas. */
-export interface HeroImage {
-  imageId: string;
+export interface HeroMedia {
+  mediaId: string;
   width: number;
   height: number;
   placeholder: string | null;
@@ -36,8 +36,8 @@ export interface PublicRights extends RightsFields {
 }
 
 /** Lo que necesita `runRegeneration` de cada imagen — evita depender del tipo inferido de Prisma. */
-interface RegenerableImage {
-  image_id: string;
+interface RegenerableMedia {
+  media_id: string;
   storage_key: string;
   mime_type: string;
   rights: unknown;
@@ -65,7 +65,7 @@ export interface PublicSite {
   contactEmail: string;
   contactIntro: string;
   instagram: string;
-  hero: HeroImage | null;
+  hero: HeroMedia | null;
   watermark: PublicWatermark;
   rights: PublicRights;
 }
@@ -119,20 +119,20 @@ export class SiteService {
   /**
    * Actualiza los ajustes (merge de los campos presentes en el DTO).
    *
-   * @throws BadRequestException si `heroImageId` apunta a una imagen que no
+   * @throws BadRequestException si `heroMediaId` apunta a una imagen que no
    *         existe o cuyo álbum no es público (el hero se sirve sin firma en
    *         una página cacheada).
    */
   async update(dto: UpdateSiteDto): Promise<PublicSite> {
-    if (dto.heroImageId) {
-      const image = await this.prisma.images.findUnique({
-        where: { image_id: dto.heroImageId },
+    if (dto.heroMediaId) {
+      const media = await this.prisma.media.findUnique({
+        where: { media_id: dto.heroMediaId },
         include: { album: { select: { visibility: true } } },
       });
       if (
-        !image ||
-        image.album.visibility !== 'public' ||
-        image.status !== 'published'
+        !media ||
+        media.album.visibility !== 'public' ||
+        media.status !== 'published'
       ) {
         throw new BadRequestException(
           'La imagen del hero debe ser una foto publicada de una colección pública.',
@@ -153,8 +153,8 @@ export class SiteService {
         ? { contact_intro: dto.contactIntro }
         : {}),
       ...(dto.instagram !== undefined ? { instagram: dto.instagram } : {}),
-      ...(dto.heroImageId !== undefined
-        ? { hero_image_id: dto.heroImageId }
+      ...(dto.heroMediaId !== undefined
+        ? { hero_media_id: dto.heroMediaId }
         : {}),
       ...(dto.watermarkText !== undefined
         ? { watermark_text: dto.watermarkText }
@@ -294,9 +294,9 @@ export class SiteService {
 
   /** El trabajo real de regeneración — nunca se llama directo, solo desde `startWatermarkRegeneration`. */
   private async runRegeneration(): Promise<void> {
-    let images: RegenerableImage[] = [];
+    let rows: RegenerableMedia[] = [];
     try {
-      images = await this.prisma.images.findMany({
+      rows = await this.prisma.media.findMany({
         where: { album: { visibility: 'public' } },
         include: { variants: true },
       });
@@ -310,25 +310,25 @@ export class SiteService {
       return;
     }
 
-    this.regenState.total = images.length;
+    this.regenState.total = rows.length;
     const watermarkConfig = await this.getWatermarkConfig();
     const rightsDefaults = await this.getRightsDefaults();
 
-    for (const image of images) {
+    for (const media of rows) {
       try {
         // `storage.read` solo lo implementa el driver de disco — con
         // Cloudinary (producción) esta imagen se cuenta como "skipped": leer
         // de vuelta el original requeriría bajarlo por HTTPS de su CDN, que
         // no está implementado todavía (ver DOCUMENTO_VIVO_ARQUITECTURA §14).
-        const object = await this.storage.read(image.storage_key);
+        const object = await this.storage.read(media.storage_key);
         if (!object) {
           this.regenState.skipped++;
           continue;
         }
         const originalBuffer = await streamToBuffer(object.stream);
-        const rights = resolveRights(rightsDefaults, image.rights);
+        const rights = resolveRights(rightsDefaults, media.rights);
         const originalFormat: EmbeddableFormat =
-          image.mime_type === 'image/png' ? 'png' : 'jpeg';
+          media.mime_type === 'image/png' ? 'png' : 'jpeg';
 
         // Metadatos frescos en el original limpio (nunca lleva marca).
         const withMeta = await this.metadata.embed(
@@ -339,17 +339,17 @@ export class SiteService {
         if (!withMeta.equals(originalBuffer)) {
           const stored = await this.storage.put(withMeta, {
             extension: originalFormat,
-            contentType: image.mime_type,
+            contentType: media.mime_type,
             visibility: 'public',
           });
-          await this.storage.remove(image.storage_key).catch(() => undefined);
-          await this.prisma.images.update({
-            where: { image_id: image.image_id },
+          await this.storage.remove(media.storage_key).catch(() => undefined);
+          await this.prisma.media.update({
+            where: { media_id: media.media_id },
             data: { storage_key: stored.key },
           });
         }
 
-        for (const variant of image.variants) {
+        for (const variant of media.variants) {
           const rebuilt = await this.pipeline.buildVariant(
             originalBuffer,
             variant.label,
@@ -365,7 +365,7 @@ export class SiteService {
             visibility: 'public',
           });
           await this.storage.remove(variant.storage_key).catch(() => undefined);
-          await this.prisma.image_variants.update({
+          await this.prisma.media_variants.update({
             where: { variant_id: variant.variant_id },
             data: { storage_key: stored.key, bytes: stored.bytes },
           });
@@ -373,7 +373,7 @@ export class SiteService {
         this.regenState.processed++;
       } catch (error) {
         this.logger.warn(
-          `No se pudo regenerar la imagen ${image.image_id}: ${(error as Error).message}`,
+          `No se pudo regenerar el elemento ${media.media_id}: ${(error as Error).message}`,
         );
         this.regenState.skipped++;
       }
@@ -458,7 +458,7 @@ export class SiteService {
     contact_email: string;
     contact_intro: string;
     instagram: string;
-    hero_image_id: string | null;
+    hero_media_id: string | null;
     watermark_asset_key: string;
     watermark_text: string;
     watermark_opacity: number;
@@ -470,24 +470,24 @@ export class SiteService {
     default_license_terms: string;
     licensor_url: string;
   }): Promise<PublicSite> {
-    let hero: HeroImage | null = null;
-    if (settings.hero_image_id) {
+    let hero: HeroMedia | null = null;
+    if (settings.hero_media_id) {
       // Solo se sirve como hero si sigue publicada (pudo archivarse después
       // de fijarla); si no, la portada cae a su degradado.
-      const image = await this.prisma.images.findFirst({
-        where: { image_id: settings.hero_image_id, status: 'published' },
+      const media = await this.prisma.media.findFirst({
+        where: { media_id: settings.hero_media_id, status: 'published' },
         include: { variants: true },
       });
-      if (image) {
+      if (media) {
         hero = {
-          imageId: image.image_id,
-          width: image.width,
-          height: image.height,
-          placeholder: image.placeholder,
+          mediaId: media.media_id,
+          width: media.width,
+          height: media.height,
+          placeholder: media.placeholder,
           urls: {
-            original: this.storage.urlFor(image.storage_key, 'public'),
+            original: this.storage.urlFor(media.storage_key, 'public'),
             ...Object.fromEntries(
-              image.variants.map((v) => [
+              media.variants.map((v) => [
                 v.label,
                 this.storage.urlFor(v.storage_key, 'public'),
               ]),

@@ -18,7 +18,7 @@ function row(overrides: Record<string, unknown> = {}) {
     contact_email: '',
     contact_intro: '',
     instagram: '',
-    hero_image_id: null,
+    hero_media_id: null,
     watermark_asset_key: '',
     watermark_text: '',
     watermark_opacity: 0.35,
@@ -37,7 +37,7 @@ function row(overrides: Record<string, unknown> = {}) {
 describe('SiteService', () => {
   let prisma: {
     site_settings: { upsert: jest.Mock; findUnique: jest.Mock };
-    images: { findUnique: jest.Mock; findFirst: jest.Mock };
+    media: { findUnique: jest.Mock; findFirst: jest.Mock };
   };
   let storage: { urlFor: jest.Mock; read: jest.Mock };
   let service: SiteService;
@@ -48,7 +48,7 @@ describe('SiteService', () => {
         upsert: jest.fn().mockResolvedValue(row()),
         findUnique: jest.fn().mockResolvedValue(row()),
       },
-      images: { findUnique: jest.fn(), findFirst: jest.fn() },
+      media: { findUnique: jest.fn(), findFirst: jest.fn() },
     };
     storage = {
       urlFor: jest.fn((key: string) => `https://cdn.test/${key}`),
@@ -99,78 +99,78 @@ describe('SiteService', () => {
     expect(call.update).not.toHaveProperty('tagline');
   });
 
-  it('update() rechaza un heroImageId que no existe (sin escribir)', async () => {
-    prisma.images.findUnique.mockResolvedValue(null);
+  it('update() rechaza un heroMediaId que no existe (sin escribir)', async () => {
+    prisma.media.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.update({ heroImageId: '11111111-1111-4111-8111-111111111111' }),
+      service.update({ heroMediaId: '11111111-1111-4111-8111-111111111111' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.site_settings.upsert).not.toHaveBeenCalled();
   });
 
   it('update() rechaza un hero cuyo álbum NO es público (sin escribir)', async () => {
-    prisma.images.findUnique.mockResolvedValue({
-      image_id: 'img-1',
+    prisma.media.findUnique.mockResolvedValue({
+      media_id: 'img-1',
       status: 'published',
       album: { visibility: 'unlisted' },
     });
 
     await expect(
-      service.update({ heroImageId: '22222222-2222-4222-8222-222222222222' }),
+      service.update({ heroMediaId: '22222222-2222-4222-8222-222222222222' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.site_settings.upsert).not.toHaveBeenCalled();
   });
 
   it('update() rechaza un hero que no está publicado (sin escribir)', async () => {
-    prisma.images.findUnique.mockResolvedValue({
-      image_id: 'img-1',
+    prisma.media.findUnique.mockResolvedValue({
+      media_id: 'img-1',
       status: 'draft',
       album: { visibility: 'public' },
     });
 
     await expect(
-      service.update({ heroImageId: '44444444-4444-4444-8444-444444444444' }),
+      service.update({ heroMediaId: '44444444-4444-4444-8444-444444444444' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.site_settings.upsert).not.toHaveBeenCalled();
   });
 
   it('update() acepta un hero publicado de un álbum público', async () => {
-    prisma.images.findUnique.mockResolvedValue({
-      image_id: 'img-1',
+    prisma.media.findUnique.mockResolvedValue({
+      media_id: 'img-1',
       status: 'published',
       album: { visibility: 'public' },
     });
     // toPublic() resuelve el hero con findFirst (solo si sigue publicado)
-    prisma.images.findFirst.mockResolvedValue({
-      image_id: 'img-1',
+    prisma.media.findFirst.mockResolvedValue({
+      media_id: 'img-1',
       storage_key: 'orig.webp',
       width: 1600,
       height: 1067,
       placeholder: 'blur',
       variants: [{ label: 'large', storage_key: 'large.webp' }],
     });
-    prisma.site_settings.upsert.mockResolvedValue(row({ hero_image_id: 'img-1' }));
+    prisma.site_settings.upsert.mockResolvedValue(row({ hero_media_id: 'img-1' }));
 
     const result = await service.update({
-      heroImageId: '33333333-3333-4333-8333-333333333333',
+      heroMediaId: '33333333-3333-4333-8333-333333333333',
     });
 
     expect(prisma.site_settings.upsert.mock.calls[0][0].update).toEqual({
-      hero_image_id: '33333333-3333-4333-8333-333333333333',
+      hero_media_id: '33333333-3333-4333-8333-333333333333',
     });
     expect(result.hero).toMatchObject({
-      imageId: 'img-1',
+      mediaId: 'img-1',
       width: 1600,
       urls: { original: 'https://cdn.test/orig.webp', large: 'https://cdn.test/large.webp' },
     });
   });
 
-  it('update({ heroImageId: null }) limpia el hero sin validar nada', async () => {
-    await service.update({ heroImageId: null });
+  it('update({ heroMediaId: null }) limpia el hero sin validar nada', async () => {
+    await service.update({ heroMediaId: null });
 
-    expect(prisma.images.findUnique).not.toHaveBeenCalled();
+    expect(prisma.media.findUnique).not.toHaveBeenCalled();
     expect(prisma.site_settings.upsert.mock.calls[0][0].update).toEqual({
-      hero_image_id: null,
+      hero_media_id: null,
     });
   });
 
@@ -245,9 +245,9 @@ describe('SiteService', () => {
   describe('regeneración en segundo plano', () => {
     it('arranca "running" de inmediato, sin esperar al trabajo', () => {
       const prismaAny = prisma as unknown as {
-        images: { findMany: jest.Mock };
+        media: { findMany: jest.Mock };
       };
-      prismaAny.images = { findMany: jest.fn(() => new Promise(() => {})) }; // nunca resuelve
+      prismaAny.media = { findMany: jest.fn(() => new Promise(() => {})) }; // nunca resuelve
 
       const status = service.startWatermarkRegeneration();
 
@@ -257,14 +257,14 @@ describe('SiteService', () => {
 
     it('una segunda llamada mientras corre NO relanza — devuelve el estado en curso', () => {
       const prismaAny = prisma as unknown as {
-        images: { findMany: jest.Mock };
+        media: { findMany: jest.Mock };
       };
-      prismaAny.images = { findMany: jest.fn(() => new Promise(() => {})) };
+      prismaAny.media = { findMany: jest.fn(() => new Promise(() => {})) };
 
       const first = service.startWatermarkRegeneration();
       const second = service.startWatermarkRegeneration();
 
-      expect(prismaAny.images.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaAny.media.findMany).toHaveBeenCalledTimes(1);
       expect(second.startedAt).toBe(first.startedAt);
     });
 
@@ -274,9 +274,9 @@ describe('SiteService', () => {
 
     it('si la consulta inicial falla, el estado pasa a "error" (no queda "running" para siempre)', async () => {
       const prismaAny = prisma as unknown as {
-        images: { findMany: jest.Mock };
+        media: { findMany: jest.Mock };
       };
-      prismaAny.images = {
+      prismaAny.media = {
         findMany: jest.fn().mockRejectedValue(new Error('boom')),
       };
 

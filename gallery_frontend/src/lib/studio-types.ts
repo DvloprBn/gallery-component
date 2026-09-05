@@ -8,31 +8,31 @@ export interface AlbumRow {
   visibility: 'public' | 'unlisted' | 'private';
   layout: 'masonry' | 'justified' | 'grid' | 'carousel';
   theme: Record<string, unknown>;
-  cover_image_id: string | null;
+  cover_media_id: string | null;
   sort_order: number;
   /** Se muestra en la portada del sitio (solo aplica a colecciones públicas). */
   featured: boolean;
-  image_count: number;
+  media_count: number;
   created_at: string;
   updated_at: string;
 }
 
-/** Estados de curación de una imagen (Fase 10b). */
-export const IMAGE_STATUSES = ['published', 'draft', 'archived'] as const;
-export type ImageStatus = (typeof IMAGE_STATUSES)[number];
+/** Estados de curación de un elemento (Fase 10b). */
+export const MEDIA_STATUSES = ['published', 'draft', 'archived'] as const;
+export type MediaStatus = (typeof MEDIA_STATUSES)[number];
 
 /** Etiqueta en español de cada estado, para la interfaz. */
-export const IMAGE_STATUS_LABEL: Record<ImageStatus, string> = {
+export const MEDIA_STATUS_LABEL: Record<MediaStatus, string> = {
   published: 'Publicada',
   draft: 'Borrador',
   archived: 'Archivada',
 };
 
 /**
- * Registro de derechos propio de una imagen (Fase 11, D10) — solo los campos
+ * Registro de derechos propio de un elemento (Fase 11, D10) — solo los campos
  * que sobreescriben los del sitio; lo que falte hereda de `site.rights`.
  */
-export interface ImageRights {
+export interface MediaRights {
   rightsHolder?: string;
   creator?: string;
   creditLine?: string;
@@ -41,9 +41,9 @@ export interface ImageRights {
   licensorUrl?: string;
 }
 
-/** Imagen tal como la devuelven `POST /albums/:id/images` y `GET /albums/:id/images`. */
-export interface ImageDto {
-  imageId: string;
+/** Elemento tal como lo devuelven `POST /albums/:id/media` y `GET /albums/:id/media`. */
+export interface MediaDto {
+  mediaId: string;
   albumId: string;
   originalName: string | null;
   mimeType: string;
@@ -55,9 +55,9 @@ export interface ImageDto {
   caption: string | null;
   sortOrder: number;
   /** Curación: solo las `published` se ven en la galería pública. */
-  status: ImageStatus;
+  status: MediaStatus;
   /** Override de derechos de esta imagen (vacío = hereda todo del sitio). */
-  rights: ImageRights;
+  rights: MediaRights;
   createdAt: string;
   urls: Record<string, string>;
 }

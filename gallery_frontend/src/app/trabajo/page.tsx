@@ -50,8 +50,8 @@ export default async function TrabajoPage() {
                     <span className="pf-card__desc">{c.description}</span>
                   ) : null}
                   <span className="pf-card__meta">
-                    {c.imageCount}{' '}
-                    {c.imageCount === 1 ? 'fotografía' : 'fotografías'}
+                    {c.mediaCount}{' '}
+                    {c.mediaCount === 1 ? 'fotografía' : 'fotografías'}
                   </span>
                 </span>
               </Link>

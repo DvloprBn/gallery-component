@@ -64,7 +64,7 @@ const EMPTY_RIGHTS: RightsFields = {
 
 /** Una imagen candidata a hero (de una colección pública). */
 interface HeroOption {
-  imageId: string;
+  mediaId: string;
   label: string;
   thumbUrl: string | null;
 }
@@ -117,7 +117,7 @@ function Inner() {
       defaultLicenseTerms: rights.licenseTerms,
       licensorUrl: rights.licensorUrl,
     });
-    setHeroId(hero?.imageId ?? '');
+    setHeroId(hero?.mediaId ?? '');
     setCurrentHero(hero);
     setWatermark(wm);
     return site;
@@ -128,7 +128,7 @@ function Inner() {
       await loadSite();
       setLoaded(true);
 
-      // Reúne las imágenes de todas las colecciones públicas como candidatas a hero.
+      // Reúne el contenido de todas las colecciones públicas como candidatas a hero.
       try {
         const collections = await apiFetch<
           { slug: string; title: string }[]
@@ -136,12 +136,12 @@ function Inner() {
         const perCollection = await Promise.all(
           collections.map(async (c) => {
             const g = await apiFetch<{
-              images: { imageId: string; urls: Record<string, string> }[];
+              media: { mediaId: string; urls: Record<string, string> }[];
             }>(`/g/${c.slug}`);
-            return g.images.map((img, i) => ({
-              imageId: img.imageId,
+            return g.media.map((m, i) => ({
+              mediaId: m.mediaId,
               label: `${c.title} — #${i + 1}`,
-              thumbUrl: img.urls.thumb ?? img.urls.small ?? null,
+              thumbUrl: m.urls.thumb ?? m.urls.small ?? null,
             }));
           }),
         );
@@ -166,7 +166,7 @@ function Inner() {
       setRightsFields((f) => ({ ...f, [key]: event.target.value }));
 
   const preview = useMemo(
-    () => options.find((o) => o.imageId === heroId)?.thumbUrl ?? currentHero?.urls.thumb ?? null,
+    () => options.find((o) => o.mediaId === heroId)?.thumbUrl ?? currentHero?.urls.thumb ?? null,
     [options, heroId, currentHero],
   );
 
@@ -180,7 +180,7 @@ function Inner() {
           ...fields,
           ...watermarkFields,
           ...rightsFields,
-          heroImageId: heroId === '' ? null : heroId,
+          heroMediaId: heroId === '' ? null : heroId,
         },
       });
       setCurrentHero(updated.hero);
@@ -335,7 +335,7 @@ function Inner() {
               <select value={heroId} onChange={(e) => setHeroId(e.target.value)}>
                 <option value="">— Sin hero (degradado) —</option>
                 {options.map((o) => (
-                  <option key={o.imageId} value={o.imageId}>
+                  <option key={o.mediaId} value={o.mediaId}>
                     {o.label}
                   </option>
                 ))}

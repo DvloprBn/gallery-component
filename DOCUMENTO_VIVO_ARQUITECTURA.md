@@ -168,55 +168,65 @@ model albums {
   visibility     String    @default("private") @db.VarChar(20)
   layout         String    @default("masonry") @db.VarChar(20) // masonry | justified | grid | carousel
   theme          Json      @default("{}")                       // tokens de diseño (colores, tipografía, radios, espaciado)
-  cover_image_id String?   @db.Uuid
+  cover_media_id String?   @db.Uuid
   sort_order     Int       @default(0)
-  image_count    Int       @default(0)  // desnormalizado, mantenido en transacción
+  media_count    Int       @default(0)  // desnormalizado, mantenido en transacción
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   owner  users    @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
-  images images[]
+  media  media[]
   share_tokens album_share_tokens[]
 
   @@index([owner_user_id])
   @@index([visibility])
 }
 
-// La imagen ORIGINAL subida, ya normalizada (re-encode con sharp, sin EXIF).
-// `storage_key` es la ruta opaca dentro del StorageService (nunca el nombre
-// original del cliente). `checksum_sha256` permite deduplicar y detectar
-// corrupción.  El original re-encodeado se guarda para poder regenerar
-// derivados en el futuro, pero NUNCA se sirve directo a la galería.
-model images {
-  image_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  album_id        String   @db.Uuid
-  owner_user_id   String   @db.Uuid
-  storage_key     String   @unique
-  original_name   String?  @db.VarChar(255) // saneado, solo para mostrar/descargar
-  mime_type       String   @db.VarChar(50)  // detectado por contenido, no por extensión
+// Un elemento (foto o video — `kind`) subido y ya normalizado (re-encode con
+// sharp/ffmpeg, sin metadatos). `storage_key` es la ruta opaca dentro del
+// StorageService (nunca el nombre original del cliente). `checksum_sha256`
+// deduplica y detecta corrupción. El original re-encodeado (master) se guarda
+// para regenerar derivados, pero NUNCA se sirve directo a la galería.
+// (Fase 14a — antes se llamaba `images`; se unificó para soportar video.)
+enum media_kind { photo  video }
+
+model media {
+  media_id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  album_id        String     @db.Uuid
+  owner_user_id   String     @db.Uuid
+  kind            media_kind @default(photo)
+  storage_key     String     @unique
+  original_name   String?    @db.VarChar(255)
+  mime_type       String     @db.VarChar(50)  // detectado por contenido, no por extensión
   width           Int
   height          Int
   bytes           Int
-  checksum_sha256 String   @db.VarChar(64)
-  placeholder     String?  @db.VarChar(120) // blurhash o color dominante
-  alt_text        String?  @db.VarChar(500)
-  caption         String?  @db.VarChar(2000)
-  sort_order      Int      @default(0)
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  checksum_sha256 String     @db.VarChar(64)
+  placeholder     String?    @db.VarChar(120) // blurhash o color dominante
+  alt_text        String?    @db.VarChar(500)
+  caption         String?    @db.VarChar(2000)
+  sort_order      Int        @default(0)
+  status          String     @default("draft") @db.VarChar(16) // archived | draft | published
+  rights          Json?      // registro de derechos por elemento (Fase 11)
+  created_at      DateTime   @default(now()) @db.Timestamptz(6)
 
-  album    albums          @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
-  owner    users           @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
-  variants image_variants[]
+  album            albums             @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+  owner            users              @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+  variants         media_variants[]
+  license_requests license_requests[]
+  licenses         licenses[]
 
   @@index([album_id])
+  @@index([album_id, status])
   @@index([owner_user_id])
 }
 
 // Derivados responsivos generados por el pipeline. Se sirven ESTOS, nunca
-// el original.  `format` moderno (webp/avif) con fallback jpeg.
-model image_variants {
+// el original. Foto: `format` moderno (webp/avif) con fallback jpeg. Video
+// (Fase 14): renditions HLS + preview progresivo.
+model media_variants {
   variant_id  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  image_id    String   @db.Uuid
+  media_id    String   @db.Uuid
   storage_key String   @unique
   label       String   @db.VarChar(20)  // thumb | small | medium | large
   format      String   @db.VarChar(10)  // webp | avif | jpeg
@@ -225,10 +235,10 @@ model image_variants {
   bytes       Int
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  media media @relation(fields: [media_id], references: [media_id], onDelete: Cascade)
 
-  @@unique([image_id, label, format])
-  @@index([image_id])
+  @@unique([media_id, label, format])
+  @@index([media_id])
 }
 
 // Enlace de acceso a un álbum `unlisted`/`private` con caducidad opcional.
@@ -1840,3 +1850,68 @@ master fuera del público, entrega de un solo uso del master, `prefers-reduced-m
 
 Sin servicios de pago nuevos. Dependencias: `ffmpeg` (Dockerfiles), `hls.js` (frontend, CDN ya
 permitido). Encaja después de la Fase 13 o antes — no depende de Stripe.
+
+## 20. Fase 14a — Refactor `images` → `media` (completada y verificada, 2026-09-05)
+
+Primer tramo de la Fase 14: preparar el terreno para el video sin añadir video todavía. Es un
+renombrado profundo pero mecánico — el comportamiento no cambia, solo los nombres.
+
+### 20.1 Migración no destructiva
+
+`20260905120000_media_unification` está **escrita a mano** (no la autogeneró Prisma). Prisma no
+detecta renombrados: habría hecho `DROP TABLE images; CREATE TABLE media` y borrado las 244 fotos +
+976 derivados del portafolio ya sembrado. En su lugar, la migración usa `ALTER TABLE … RENAME`:
+
+- tablas: `images` → `media`, `image_variants` → `media_variants`;
+- columnas: `image_id` → `media_id` (en `media`, `media_variants`, `license_requests`, `licenses`),
+  `albums.cover_image_id` → `cover_media_id`, `albums.image_count` → `media_count`,
+  `site_settings.hero_image_id` → `hero_media_id`;
+- **todos** los índices y las llaves foráneas se renombran también (`ALTER INDEX … RENAME`,
+  `ALTER TABLE … RENAME CONSTRAINT`) para que coincidan con los nombres que Prisma deriva del
+  nuevo modelo — si no, la siguiente `migrate` los vería como drift y los recrearía;
+- `CREATE TYPE media_kind AS ENUM ('photo', 'video')` + `media.kind` con `DEFAULT 'photo'`.
+
+`prisma migrate dev` la aplicó y confirmó *"Your database is now in sync with your schema"* sin
+drift. Verificado en la BD: `media` = 244, `media_variants` = 976, todas `kind = 'photo'`,
+`license_requests` = 4, `licenses` = 1 — cero pérdida.
+
+### 20.2 Alcance del renombrado
+
+**Se renombró** (contrato + datos): el modelo y las columnas de arriba; las rutas
+`POST/GET /albums/:id/images` → `/media`, `…/images/reorder|status` → `…/media/reorder|status`,
+`PATCH/DELETE /images/:id` → `/media/:id`; el tag de Swagger `images` → `media`; los campos de
+payload/JSON `imageId` → `mediaId`, `imageIds` → `mediaIds`, `imageThumbUrl` → `mediaThumbUrl`,
+`imageCount` → `mediaCount`, `coverImageId` → `coverMediaId`, `heroImageId` → `heroMediaId`;
+`GET /g/:slug` ahora devuelve `{ album, media: [...] }` (antes `images`); los tipos compartidos del
+frontend (`ImageDto` → `MediaDto`, `GalleryImage` → `GalleryMedia`, `ImageRights` → `MediaRights`,
+`IMAGE_STATUSES`/`ImageStatus` → `MEDIA_*`), el componente `ImageGrid` → `MediaGrid`, la prop
+`image` → `media` de `GalleryImage`.
+
+**Se dejó igual** (a propósito): el módulo NestJS `src/images/` y sus clases `ImagesService` /
+`ImagesController` / `ImagesModule` — renombrarlas colisiona con el `MediaModule` / `MediaService`
+que ya existen (la capa de **entrega** pública: `/galleries`, `/g/:slug`, `/media/:key`), y el
+nombre interno del módulo no es contrato. `ImagePipelineService` y `src/media-processing/` — operan
+sobre buffers, no sobre el modelo. Las carpetas de migraciones viejas. El pipeline sigue siendo
+solo-imagen hasta la Fase 14b; `media.kind` es siempre `photo` por ahora.
+
+También se dejó `status` como `String` validado (no se convirtió a `enum media_status`) y
+`sort_order` con su nombre — ninguno de los dos hace falta para soportar video y convertirlos añade
+riesgo de migración a cambio de nada. Se anota como posible pulido posterior.
+
+### 20.3 Verificación
+
+- `tsc` backend + `tsc` frontend limpios; **101 tests / 15 suites** en verde (sin tests nuevos —
+  es un renombrado, la cobertura existente ya lo cubre).
+- `next build` producción (`NODE_ENV=production`) limpio, 16 rutas.
+- **`verify-14a.mjs`** contra el backend en vivo — **17/17**: `GET /galleries` trae `mediaCount`;
+  `GET /g/:slug` devuelve `{ media: [{ mediaId }] }`; `POST /license-requests { mediaId }` → 202 y
+  la bandeja trae `mediaId`/`mediaThumbUrl`; `PATCH /site { heroMediaId }` → 200 y `site.hero.mediaId`
+  lo refleja, `{ heroMediaId: null }` → 200; flujo Studio completo sobre las rutas nuevas —
+  `POST /albums/:id/media` (subida) → `mediaId`, `PATCH /media/:id`, `POST /albums/:id/media/status
+  { mediaIds }`, `PATCH /albums/:id { coverMediaId }`, `DELETE /media/:id` → 204.
+- `probe-fase10.mjs` (24 checks de seguridad de `/site` + `/contact`) → **24/24** con las rutas y
+  campos renombrados.
+
+`seed-portfolio.ts`, `seed-demo.ts` y `probe-fase10.mjs` quedaron ajustados a las rutas/campos
+nuevos. El seed del portafolio lo vuelve a correr el dueño desde el host cuando quiera (es
+convergente); la BD de desarrollo ya está migrada con sus 244 fotos intactas.

@@ -83,8 +83,8 @@ export default async function HomePage() {
                   <span className="pf-card__body">
                     <span className="pf-card__title">{c.title}</span>
                     <span className="pf-card__meta">
-                      {c.imageCount}{' '}
-                      {c.imageCount === 1 ? 'fotografía' : 'fotografías'}
+                      {c.mediaCount}{' '}
+                      {c.mediaCount === 1 ? 'fotografía' : 'fotografías'}
                     </span>
                   </span>
                 </Link>

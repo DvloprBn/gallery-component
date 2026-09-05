@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { Gallery, GalleryImage as GalleryImageData } from '@/lib/gallery-schema';
+import type { Gallery, GalleryMedia as GalleryMediaData } from '@/lib/gallery-schema';
 import {
   motionDuration,
   motionPreset,
@@ -74,11 +74,11 @@ export function GalleryLayout({
     );
     items.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [preset, gallery.images.length]);
+  }, [preset, gallery.media.length]);
 
-  const item = (image: GalleryImageData, index: number) => (
+  const item = (media: GalleryMediaData, index: number) => (
     <div
-      key={image.imageId}
+      key={media.mediaId}
       className="g-item g-reveal"
       data-preset={preset}
       style={
@@ -87,15 +87,15 @@ export function GalleryLayout({
           '--reveal-duration': `${duration}s`,
           ...(layout === 'justified'
             ? {
-                flexGrow: image.width / image.height,
-                flexBasis: `${(image.width / image.height) * 240}px`,
+                flexGrow: media.width / media.height,
+                flexBasis: `${(media.width / media.height) * 240}px`,
               }
             : {}),
         } as React.CSSProperties
       }
     >
       <GalleryImage
-        image={image}
+        media={media}
         sizes={SIZES_BY_LAYOUT[layout]}
         priority={index < 3}
         onOpen={() => onOpen(index)}
@@ -105,7 +105,7 @@ export function GalleryLayout({
 
   return (
     <div ref={rootRef} className={`g-layout g-layout--${layout}`}>
-      {gallery.images.map(item)}
+      {gallery.media.map(item)}
     </div>
   );
 }

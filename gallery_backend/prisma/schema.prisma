@@ -54,7 +54,7 @@ model users {
   password_reset_tokens password_reset_tokens[]
   totp_recovery_codes   totp_recovery_codes[]
   albums                albums[]
-  images                images[]
+  media                 media[]
 
   @@index([role_id])
 }
@@ -138,55 +138,65 @@ model albums {
   visibility     String   @default("private") @db.VarChar(20)
   layout         String   @default("masonry") @db.VarChar(20) // masonry | justified | grid | carousel
   theme          Json     @default("{}") // tokens de diseño (colores, tipografía, radios, espaciado, motion)
-  cover_image_id String?  @db.Uuid
+  cover_media_id String?  @db.Uuid
   sort_order     Int      @default(0)
   featured       Boolean  @default(false) // se muestra en la portada del sitio
-  image_count    Int      @default(0) // desnormalizado, mantenido dentro de la misma transacción
+  media_count    Int      @default(0) // desnormalizado, mantenido dentro de la misma transacción
   created_at     DateTime @default(now()) @db.Timestamptz(6)
   updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   owner        users                @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
-  images       images[]
+  media        media[]
   share_tokens album_share_tokens[]
 
   @@index([owner_user_id])
   @@index([visibility])
 }
 
-// La imagen ORIGINAL subida, ya normalizada (re-encode con sharp, sin EXIF).
-// `storage_key` es la ruta opaca dentro del StorageService (nunca el nombre
-// original del cliente). `checksum_sha256` permite deduplicar y detectar
-// corrupción. El original re-encodeado se guarda para poder regenerar
+// Tipo de un elemento de `media`. La galería, la protección (marca de agua +
+// derechos) y el licenciamiento son iguales para foto y video; lo que cambia
+// es el pipeline de ingesta y la forma de entrega (ver Fase 14,
+// `DOCUMENTO_VIVO_ARQUITECTURA.md` §19).
+enum media_kind {
+  photo
+  video
+}
+
+// El elemento ORIGINAL subido, ya normalizado (re-encode con sharp/ffmpeg, sin
+// metadatos). `storage_key` es la ruta opaca dentro del StorageService (nunca
+// el nombre original del cliente). `checksum_sha256` permite deduplicar y
+// detectar corrupción. El original re-encodeado se guarda para poder regenerar
 // derivados en el futuro, pero NUNCA se sirve directo a la galería.
-model images {
-  image_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  album_id        String   @db.Uuid
-  owner_user_id   String   @db.Uuid
-  storage_key     String   @unique
-  original_name   String?  @db.VarChar(255) // saneado, solo para mostrar/descargar
-  mime_type       String   @db.VarChar(50) // detectado por contenido, no por extensión
+model media {
+  media_id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  album_id        String     @db.Uuid
+  owner_user_id   String     @db.Uuid
+  kind            media_kind @default(photo)
+  storage_key     String     @unique
+  original_name   String?    @db.VarChar(255) // saneado, solo para mostrar/descargar
+  mime_type       String     @db.VarChar(50) // detectado por contenido, no por extensión
   width           Int
   height          Int
   bytes           Int
-  checksum_sha256 String   @db.VarChar(64)
-  placeholder     String?  @db.VarChar(120) // blurhash o color dominante
-  alt_text        String?  @db.VarChar(500)
-  caption         String?  @db.VarChar(2000)
-  sort_order      Int      @default(0)
+  checksum_sha256 String     @db.VarChar(64)
+  placeholder     String?    @db.VarChar(120) // blurhash o color dominante
+  alt_text        String?    @db.VarChar(500)
+  caption         String?    @db.VarChar(2000)
+  sort_order      Int        @default(0)
   // Estado de curación: 'archived' (subida, fuera del portafolio) | 'draft'
   // (en preparación) | 'published' (visible en la galería pública). Las subidas
   // nuevas entran como 'draft' — se sube en ancho y se cura después.
-  status          String   @default("draft") @db.VarChar(16)
-  // Registro de derechos de ESTA imagen (Fase 11). `null` = hereda por
+  status          String     @default("draft") @db.VarChar(16)
+  // Registro de derechos de ESTE elemento (Fase 11). `null` = hereda por
   // completo los valores por defecto de `site_settings`. Forma:
   // { rightsHolder?, creator?, creditLine?, rightsStatement?, licenseTerms?, licensorUrl? }.
-  // Es lo que se incrusta como IPTC/XMP en cada archivo servido de esta imagen.
+  // Es lo que se incrusta como IPTC/XMP en cada archivo servido.
   rights          Json?
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime   @default(now()) @db.Timestamptz(6)
 
-  album           albums            @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
-  owner           users             @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
-  variants        image_variants[]
+  album            albums             @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+  owner            users              @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+  variants         media_variants[]
   license_requests license_requests[]
   licenses         licenses[]
 
@@ -203,7 +213,7 @@ model images {
  */
 model license_requests {
   request_id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  image_id        String   @db.Uuid
+  media_id        String   @db.Uuid
   requester_name  String   @db.VarChar(150)
   requester_email String   @db.VarChar(255)
   // 'editorial' | 'commercial' | 'social' | 'print'.
@@ -221,11 +231,11 @@ model license_requests {
   quote_expires_at  DateTime? @db.Timestamptz(6) // hasta cuándo es válida ESTA cotización
   quoted_at         DateTime? @db.Timestamptz(6)
 
-  image   images    @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  media   media     @relation(fields: [media_id], references: [media_id], onDelete: Cascade)
   license licenses?
 
   @@index([status, created_at])
-  @@index([image_id])
+  @@index([media_id])
 }
 
 /**
@@ -237,7 +247,7 @@ model license_requests {
 model licenses {
   license_id     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   request_id     String   @unique @db.Uuid
-  image_id       String   @db.Uuid
+  media_id       String   @db.Uuid
   licensee_name  String   @db.VarChar(150)
   licensee_email String   @db.VarChar(255)
   intended_use   String   @db.VarChar(20)
@@ -246,10 +256,10 @@ model licenses {
   issued_at      DateTime @default(now()) @db.Timestamptz(6)
 
   request         license_requests  @relation(fields: [request_id], references: [request_id], onDelete: Cascade)
-  image           images            @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  media           media             @relation(fields: [media_id], references: [media_id], onDelete: Cascade)
   delivery_tokens delivery_tokens[]
 
-  @@index([image_id])
+  @@index([media_id])
 }
 
 /**
@@ -273,10 +283,11 @@ model delivery_tokens {
 }
 
 // Derivados responsivos generados por el pipeline. Se sirven ESTOS, nunca
-// el original. `format` moderno (webp/avif) con fallback jpeg.
-model image_variants {
+// el original. `format` moderno (webp/avif) con fallback jpeg para foto; para
+// video, las renditions HLS y el preview progresivo (ver Fase 14).
+model media_variants {
   variant_id  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  image_id    String   @db.Uuid
+  media_id    String   @db.Uuid
   storage_key String   @unique
   label       String   @db.VarChar(20) // thumb | small | medium | large
   format      String   @db.VarChar(10) // webp | avif | jpeg
@@ -285,10 +296,10 @@ model image_variants {
   bytes       Int
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  image images @relation(fields: [image_id], references: [image_id], onDelete: Cascade)
+  media media @relation(fields: [media_id], references: [media_id], onDelete: Cascade)
 
-  @@unique([image_id, label, format])
-  @@index([image_id])
+  @@unique([media_id, label, format])
+  @@index([media_id])
 }
 
 // Enlace de acceso a un álbum unlisted/private con caducidad opcional.
@@ -320,7 +331,7 @@ model site_settings {
   contact_email  String   @default("") @db.VarChar(255)
   contact_intro  String   @default("") @db.VarChar(600)
   instagram      String   @default("") @db.VarChar(200)
-  hero_image_id  String?  @db.Uuid // imagen a sangre completa de la portada
+  hero_media_id  String?  @db.Uuid // foto o video a sangre completa de la portada
 
   // ── Marca de agua (Fase 11, D9) — obligatoria en todo lo `public` ──
   // Clave de almacenamiento del PNG subido por el gestor; null = usar texto.

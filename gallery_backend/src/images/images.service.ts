@@ -23,12 +23,12 @@ import type { MediaVisibility } from '../storage/storage-driver.interface';
 import type { AuthenticatedUser } from '../auth/jwt-payload.interface';
 import {
   BulkStatusDto,
-  ReorderImagesDto,
-  UpdateImageDto,
-} from './dto/image.dto';
+  ReorderMediaDto,
+  UpdateMediaDto,
+} from './dto/media.dto';
 
 /** Un archivo subido (memory storage de multer). */
-export interface UploadedImageFile {
+export interface UploadedMediaFile {
   buffer: Buffer;
   mimetype: string;
   originalname: string;
@@ -69,7 +69,7 @@ export class ImagesService {
    *
    * Flujo: rate limit → `pipeline.process` (valida por contenido, re-codifica,
    * quita EXIF, genera derivados + placeholder) → sube original y derivados al
-   * almacenamiento → persiste `images` + `image_variants` + `image_count` en
+   * almacenamiento → persiste `media` + `media_variants` + `media_count` en
    * una transacción. Si algo falla tras subir objetos, se limpian.
    *
    * @param albumId - Álbum destino.
@@ -82,7 +82,7 @@ export class ImagesService {
   async upload(
     albumId: string,
     actor: AuthenticatedUser,
-    file: UploadedImageFile,
+    file: UploadedMediaFile,
   ) {
     const uploads = await this.redis.incrementWithTtl(
       `ul:${actor.userId}`,
@@ -154,12 +154,12 @@ export class ImagesService {
         });
       }
 
-      const nextSort = await this.prisma.images.count({
+      const nextSort = await this.prisma.media.count({
         where: { album_id: album.album_id },
       });
 
-      const image = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.images.create({
+      const media = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.media.create({
           data: {
             album_id: album.album_id,
             owner_user_id: album.owner_user_id,
@@ -179,16 +179,16 @@ export class ImagesService {
         await tx.albums.update({
           where: { album_id: album.album_id },
           data: {
-            image_count: { increment: 1 },
-            ...(album.cover_image_id
+            media_count: { increment: 1 },
+            ...(album.cover_media_id
               ? {}
-              : { cover_image_id: created.image_id }),
+              : { cover_media_id: created.media_id }),
           },
         });
         return created;
       });
 
-      return this.toDto(image, image.variants, visibility);
+      return this.toDto(media, media.variants, visibility);
     } catch (error) {
       // Compensación: si la transacción falló, no dejamos objetos huérfanos.
       await Promise.all(storedKeys.map((key) => this.storage.remove(key)));
@@ -205,13 +205,13 @@ export class ImagesService {
    */
   async listForAlbum(albumId: string, actor: AuthenticatedUser) {
     const album = await this.albums.getOwned(albumId, actor);
-    const images = await this.prisma.images.findMany({
+    const rows = await this.prisma.media.findMany({
       where: { album_id: album.album_id },
       orderBy: { sort_order: 'asc' },
       include: { variants: true },
     });
     const visibility = album.visibility as MediaVisibility;
-    return images.map((image) => this.toDto(image, image.variants, visibility));
+    return rows.map((m) => this.toDto(m, m.variants, visibility));
   }
 
   /**
@@ -222,10 +222,10 @@ export class ImagesService {
    * `POST /site/watermark/regenerate` (Fase 11); una subida nueva siempre usa
    * lo vigente en el momento de subirla.
    */
-  async update(imageId: string, actor: AuthenticatedUser, dto: UpdateImageDto) {
-    const { image, visibility } = await this.loadManageable(imageId, actor);
-    const updated = await this.prisma.images.update({
-      where: { image_id: image.image_id },
+  async update(mediaId: string, actor: AuthenticatedUser, dto: UpdateMediaDto) {
+    const { media, visibility } = await this.loadManageable(mediaId, actor);
+    const updated = await this.prisma.media.update({
+      where: { media_id: media.media_id },
       data: {
         ...(dto.altText !== undefined ? { alt_text: dto.altText } : {}),
         ...(dto.caption !== undefined ? { caption: dto.caption } : {}),
@@ -252,7 +252,7 @@ export class ImagesService {
    *
    * @param albumId - Álbum de las imágenes.
    * @param actor - Usuario autenticado (dueño del álbum o admin).
-   * @param dto - `imageIds` + `status` destino.
+   * @param dto - `mediaIds` + `status` destino.
    * @returns `{ ok, updated }` con cuántas filas cambiaron.
    * @throws BadRequestException si algún id no pertenece a ese álbum.
    */
@@ -262,17 +262,17 @@ export class ImagesService {
     dto: BulkStatusDto,
   ): Promise<{ ok: true; updated: number }> {
     const album = await this.albums.getOwned(albumId, actor);
-    const owned = await this.prisma.images.findMany({
-      where: { album_id: album.album_id, image_id: { in: dto.imageIds } },
-      select: { image_id: true },
+    const owned = await this.prisma.media.findMany({
+      where: { album_id: album.album_id, media_id: { in: dto.mediaIds } },
+      select: { media_id: true },
     });
-    if (owned.length !== new Set(dto.imageIds).size) {
+    if (owned.length !== new Set(dto.mediaIds).size) {
       throw new BadRequestException(
         'Todas las imágenes deben pertenecer a este álbum.',
       );
     }
-    const result = await this.prisma.images.updateMany({
-      where: { album_id: album.album_id, image_id: { in: dto.imageIds } },
+    const result = await this.prisma.media.updateMany({
+      where: { album_id: album.album_id, media_id: { in: dto.mediaIds } },
       data: { status: dto.status },
     });
     return { ok: true, updated: result.count };
@@ -282,14 +282,14 @@ export class ImagesService {
   async reorder(
     albumId: string,
     actor: AuthenticatedUser,
-    dto: ReorderImagesDto,
+    dto: ReorderMediaDto,
   ): Promise<{ ok: true }> {
     const album = await this.albums.getOwned(albumId, actor);
-    const existing = await this.prisma.images.findMany({
+    const existing = await this.prisma.media.findMany({
       where: { album_id: album.album_id },
-      select: { image_id: true },
+      select: { media_id: true },
     });
-    const existingIds = new Set(existing.map((i) => i.image_id));
+    const existingIds = new Set(existing.map((i) => i.media_id));
     if (
       dto.orderedIds.length !== existingIds.size ||
       dto.orderedIds.some((id) => !existingIds.has(id))
@@ -300,8 +300,8 @@ export class ImagesService {
     }
     await this.prisma.$transaction(
       dto.orderedIds.map((id, index) =>
-        this.prisma.images.update({
-          where: { image_id: id },
+        this.prisma.media.update({
+          where: { media_id: id },
           data: { sort_order: index },
         }),
       ),
@@ -310,46 +310,46 @@ export class ImagesService {
   }
 
   /** Borra una imagen: objetos del almacenamiento + fila + ajustes del álbum. */
-  async remove(imageId: string, actor: AuthenticatedUser): Promise<void> {
-    const { image } = await this.loadManageable(imageId, actor);
-    const variants = await this.prisma.image_variants.findMany({
-      where: { image_id: image.image_id },
+  async remove(mediaId: string, actor: AuthenticatedUser): Promise<void> {
+    const { media } = await this.loadManageable(mediaId, actor);
+    const variants = await this.prisma.media_variants.findMany({
+      where: { media_id: media.media_id },
     });
 
-    await this.storage.remove(image.storage_key);
+    await this.storage.remove(media.storage_key);
     await Promise.all(
       variants.map((variant) => this.storage.remove(variant.storage_key)),
     );
 
     await this.prisma.$transaction(async (tx) => {
       // Si esta imagen era la portada, primero se quita la referencia
-      // (cover_image_id no tiene FK, pero dejarla apuntando a una imagen
+      // (cover_media_id no tiene FK, pero dejarla apuntando a una imagen
       // borrada confundiría al frontend).
       await tx.albums.updateMany({
-        where: { album_id: image.album_id, cover_image_id: image.image_id },
-        data: { cover_image_id: null },
+        where: { album_id: media.album_id, cover_media_id: media.media_id },
+        data: { cover_media_id: null },
       });
-      await tx.images.delete({ where: { image_id: image.image_id } });
+      await tx.media.delete({ where: { media_id: media.media_id } });
       await tx.albums.update({
-        where: { album_id: image.album_id },
-        data: { image_count: { decrement: 1 } },
+        where: { album_id: media.album_id },
+        data: { media_count: { decrement: 1 } },
       });
     });
   }
 
   /** Carga una imagen y verifica que el actor puede gestionar su álbum. */
-  private async loadManageable(imageId: string, actor: AuthenticatedUser) {
-    const image = await this.prisma.images.findUnique({
-      where: { image_id: imageId },
+  private async loadManageable(mediaId: string, actor: AuthenticatedUser) {
+    const media = await this.prisma.media.findUnique({
+      where: { media_id: mediaId },
       include: { album: true },
     });
-    if (!image) {
+    if (!media) {
       throw new NotFoundException('Imagen no encontrada.');
     }
-    if (!this.albums.canManage(image.album, actor)) {
+    if (!this.albums.canManage(media.album, actor)) {
       throw new ForbiddenException('No puedes gestionar esta imagen.');
     }
-    return { image, visibility: image.album.visibility as MediaVisibility };
+    return { media, visibility: media.album.visibility as MediaVisibility };
   }
 
   /** Deja el nombre original del cliente en algo seguro de mostrar/guardar. */
@@ -359,10 +359,10 @@ export class ImagesService {
       .slice(0, 255);
   }
 
-  /** Forma de salida de una imagen, con las URLs de entrega ya resueltas. */
+  /** Forma de salida de un elemento de media, con las URLs de entrega ya resueltas. */
   private toDto(
-    image: {
-      image_id: string;
+    media: {
+      media_id: string;
       album_id: string;
       storage_key: string;
       original_name: string | null;
@@ -382,22 +382,22 @@ export class ImagesService {
     visibility: MediaVisibility,
   ) {
     return {
-      imageId: image.image_id,
-      albumId: image.album_id,
-      originalName: image.original_name,
-      mimeType: image.mime_type,
-      width: image.width,
-      height: image.height,
-      bytes: image.bytes,
-      placeholder: image.placeholder,
-      altText: image.alt_text,
-      caption: image.caption,
-      sortOrder: image.sort_order,
-      status: image.status,
-      rights: sanitizeRightsPartial(image.rights),
-      createdAt: image.created_at,
+      mediaId: media.media_id,
+      albumId: media.album_id,
+      originalName: media.original_name,
+      mimeType: media.mime_type,
+      width: media.width,
+      height: media.height,
+      bytes: media.bytes,
+      placeholder: media.placeholder,
+      altText: media.alt_text,
+      caption: media.caption,
+      sortOrder: media.sort_order,
+      status: media.status,
+      rights: sanitizeRightsPartial(media.rights),
+      createdAt: media.created_at,
       urls: {
-        original: this.storage.urlFor(image.storage_key, visibility),
+        original: this.storage.urlFor(media.storage_key, visibility),
         ...Object.fromEntries(
           variants.map((v) => [
             v.label,

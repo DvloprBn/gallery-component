@@ -89,11 +89,12 @@ nivel igual o superior al suyo.
   `/auth/reset-password` · `/two-factor/setup|confirm-setup|disable|recovery-codes/regenerate`
 - **Administración** (`admin`/`director`/`super`): `/roles` (CRUD) · `/users` (listar, alta, editar)
 - **Álbumes** (dueño o admin): `/albums` (CRUD) · `/albums/:id/share-tokens` (crear/revocar)
-- **Imágenes**: `POST /albums/:id/images` (subida) · `GET /albums/:id/images` ·
-  `POST /albums/:id/images/reorder` · `POST /albums/:id/images/status` (curación en bloque) ·
-  `PATCH /images/:id` (incluye `status` y `rights`) · `DELETE /images/:id`
+- **Contenido** (`media` — foto hoy, video en la Fase 14): `POST /albums/:id/media` (subida) ·
+  `GET /albums/:id/media` · `POST /albums/:id/media/reorder` ·
+  `POST /albums/:id/media/status` (curación en bloque) ·
+  `PATCH /media/:id` (incluye `status` y `rights`) · `DELETE /media/:id`
 - **Entrega pública**: `GET /galleries` (índice; `?featured=true` para las de portada) ·
-  `GET /g/:slug` (galería, solo imágenes publicadas) · `GET /media/:key` (archivos, driver de disco)
+  `GET /g/:slug` (galería, solo contenido publicado) · `GET /media/:key` (archivos, driver de disco)
 - **Sitio**: `GET /site` (identidad pública, incluye marca de agua y derechos) ·
   `PATCH /site` (`admin`+) · `POST/DELETE /site/watermark` (logo, `admin`+) ·
   `POST/GET /site/watermark/regenerate` (regenerar en segundo plano, `admin`+) ·

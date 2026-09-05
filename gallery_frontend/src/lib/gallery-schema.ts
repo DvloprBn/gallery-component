@@ -44,9 +44,9 @@ export const themeSchema = z
 
 export type GalleryTheme = z.infer<typeof themeSchema>;
 
-/** Una imagen de la galería, tal como la devuelve `GET /g/:slug`. */
-export const galleryImageSchema = z.object({
-  imageId: z.string(),
+/** Un elemento de la galería (foto o video), tal como lo devuelve `GET /g/:slug`. */
+export const galleryMediaSchema = z.object({
+  mediaId: z.string(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   placeholder: z.string().nullable(),
@@ -64,10 +64,10 @@ export const gallerySchema = z.object({
     layout: z.enum(['masonry', 'justified', 'grid', 'carousel']).catch('masonry'),
     theme: themeSchema,
     visibility: z.enum(['public', 'unlisted', 'private']),
-    imageCount: z.number().int().nonnegative(),
+    mediaCount: z.number().int().nonnegative(),
   }),
-  images: z.array(galleryImageSchema),
+  media: z.array(galleryMediaSchema),
 });
 
-export type GalleryImage = z.infer<typeof galleryImageSchema>;
+export type GalleryMedia = z.infer<typeof galleryMediaSchema>;
 export type Gallery = z.infer<typeof gallerySchema>;

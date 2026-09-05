@@ -9,8 +9,8 @@ import { sha256Hex } from '../common/utils/token.util';
 import { verifyMediaSignature } from '../storage/media-signing';
 
 /** Una imagen tal como la consume la galería pública. */
-export interface PublicImage {
-  imageId: string;
+export interface PublicMedia {
+  mediaId: string;
   width: number;
   height: number;
   placeholder: string | null;
@@ -28,9 +28,9 @@ export interface PublicGallery {
     layout: string;
     theme: unknown;
     visibility: MediaVisibility;
-    imageCount: number;
+    mediaCount: number;
   };
-  images: PublicImage[];
+  media: PublicMedia[];
 }
 
 /**
@@ -60,7 +60,7 @@ export class MediaService {
     const albums = await this.prisma.albums.findMany({
       where: {
         visibility: 'public',
-        images: { some: { status: 'published' } },
+        media: { some: { status: 'published' } },
         ...(opts.featuredOnly ? { featured: true } : {}),
       },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'desc' }],
@@ -69,23 +69,23 @@ export class MediaService {
 
     return Promise.all(
       albums.map(async (album) => {
-        const publishedCount = await this.prisma.images.count({
+        const publishedCount = await this.prisma.media.count({
           where: { album_id: album.album_id, status: 'published' },
         });
 
         // Portada: la imagen elegida si está publicada; si no (o no hay
         // elegida), la primera publicada por orden.
-        let cover = album.cover_image_id
-          ? await this.prisma.images.findFirst({
+        let cover = album.cover_media_id
+          ? await this.prisma.media.findFirst({
               where: {
-                image_id: album.cover_image_id,
+                media_id: album.cover_media_id,
                 status: 'published',
               },
               include: { variants: true },
             })
           : null;
         if (!cover) {
-          cover = await this.prisma.images.findFirst({
+          cover = await this.prisma.media.findFirst({
             where: { album_id: album.album_id, status: 'published' },
             orderBy: { sort_order: 'asc' },
             include: { variants: true },
@@ -105,7 +105,7 @@ export class MediaService {
           slug: album.slug,
           title: album.title,
           description: album.description,
-          imageCount: publishedCount,
+          mediaCount: publishedCount,
           coverUrl,
         };
       }),
@@ -141,7 +141,7 @@ export class MediaService {
 
     // La galería pública muestra solo la selección publicada — nunca borradores
     // ni archivadas, tenga o no un enlace de compartir.
-    const images = await this.prisma.images.findMany({
+    const rows = await this.prisma.media.findMany({
       where: { album_id: album.album_id, status: 'published' },
       orderBy: { sort_order: 'asc' },
       include: { variants: true },
@@ -155,15 +155,15 @@ export class MediaService {
         layout: album.layout,
         theme: album.theme,
         visibility,
-        imageCount: images.length,
+        mediaCount: rows.length,
       },
-      images: images.map((image) => ({
-        imageId: image.image_id,
-        width: image.width,
-        height: image.height,
-        placeholder: image.placeholder,
-        altText: image.alt_text,
-        caption: image.caption,
+      media: rows.map((m) => ({
+        mediaId: m.media_id,
+        width: m.width,
+        height: m.height,
+        placeholder: m.placeholder,
+        altText: m.alt_text,
+        caption: m.caption,
         urls: {
           // El original de alta resolución (limpio, sin marca de agua — D9)
           // NUNCA se ofrece en una galería `public`/`unlisted`: sería
@@ -173,10 +173,10 @@ export class MediaService {
           // concreto, es un nivel de confianza distinto al de un enlace
           // público/no listado que cualquiera puede encontrar.
           ...(visibility === 'private'
-            ? { original: this.storage.urlFor(image.storage_key, visibility) }
+            ? { original: this.storage.urlFor(m.storage_key, visibility) }
             : {}),
           ...Object.fromEntries(
-            image.variants.map((v) => [
+            m.variants.map((v) => [
               v.label,
               this.storage.urlFor(v.storage_key, visibility),
             ]),
@@ -224,21 +224,21 @@ export class MediaService {
 
   /** ¿A qué visibilidad de álbum pertenece esta clave de almacenamiento? */
   private async visibilityOfKey(key: string): Promise<MediaVisibility | null> {
-    const image = await this.prisma.images.findUnique({
+    const media = await this.prisma.media.findUnique({
       where: { storage_key: key },
       include: { album: { select: { visibility: true } } },
     });
-    if (image) {
-      return image.album.visibility as MediaVisibility;
+    if (media) {
+      return media.album.visibility as MediaVisibility;
     }
-    const variant = await this.prisma.image_variants.findUnique({
+    const variant = await this.prisma.media_variants.findUnique({
       where: { storage_key: key },
       include: {
-        image: { include: { album: { select: { visibility: true } } } },
+        media: { include: { album: { select: { visibility: true } } } },
       },
     });
     return variant
-      ? (variant.image.album.visibility as MediaVisibility)
+      ? (variant.media.album.visibility as MediaVisibility)
       : null;
   }
 

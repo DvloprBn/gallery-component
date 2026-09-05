@@ -7,14 +7,14 @@ import type { SiteService } from '../site/site.service';
 import type { StorageService } from '../storage/storage.service';
 import { LicensingService } from './licensing.service';
 
-const publicPublishedImage = {
-  image_id: 'img-1',
+const publicPublishedMedia = {
+  media_id: 'img-1',
   status: 'published',
   album: { visibility: 'public', title: 'Calle', slug: 'calle-abc' },
 };
 
 const validDto = {
-  imageId: '11111111-1111-4111-8111-111111111111',
+  mediaId: '11111111-1111-4111-8111-111111111111',
   name: 'Editor XYZ',
   email: 'editor@revista.com',
   intendedUse: 'editorial' as const,
@@ -23,7 +23,7 @@ const validDto = {
 
 describe('LicensingService', () => {
   let prisma: {
-    images: { findUnique: jest.Mock };
+    media: { findUnique: jest.Mock };
     license_requests: {
       create: jest.Mock;
       findMany: jest.Mock;
@@ -47,13 +47,13 @@ describe('LicensingService', () => {
     requester_name: 'Editor XYZ',
     requester_email: 'editor@revista.com',
     status: 'new',
-    image: { album: { title: 'Calle', slug: 'calle-abc' }, variants: [] },
+    media: { album: { title: 'Calle', slug: 'calle-abc' }, variants: [] },
     license: null,
   };
 
   beforeEach(() => {
     prisma = {
-      images: { findUnique: jest.fn().mockResolvedValue(publicPublishedImage) },
+      media: { findUnique: jest.fn().mockResolvedValue(publicPublishedMedia) },
       license_requests: {
         create: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
@@ -63,7 +63,7 @@ describe('LicensingService', () => {
           Promise.resolve({
             ...quotableRow,
             ...data,
-            image: { ...quotableRow.image, variants: [] },
+            media: { ...quotableRow.media, variants: [] },
           }),
         ),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -109,22 +109,22 @@ describe('LicensingService', () => {
   });
 
   it('rechaza una foto inexistente (sin guardar ni avisar)', async () => {
-    prisma.images.findUnique.mockResolvedValue(null);
+    prisma.media.findUnique.mockResolvedValue(null);
     await expect(service.submit(validDto)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.license_requests.create).not.toHaveBeenCalled();
     expect(mail.send).not.toHaveBeenCalled();
   });
 
   it('rechaza una foto no publicada (borrador/archivada)', async () => {
-    prisma.images.findUnique.mockResolvedValue({ ...publicPublishedImage, status: 'draft' });
+    prisma.media.findUnique.mockResolvedValue({ ...publicPublishedMedia, status: 'draft' });
     await expect(service.submit(validDto)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.license_requests.create).not.toHaveBeenCalled();
   });
 
   it('rechaza una foto de álbum no público', async () => {
-    prisma.images.findUnique.mockResolvedValue({
-      ...publicPublishedImage,
-      album: { ...publicPublishedImage.album, visibility: 'unlisted' },
+    prisma.media.findUnique.mockResolvedValue({
+      ...publicPublishedMedia,
+      album: { ...publicPublishedMedia.album, visibility: 'unlisted' },
     });
     await expect(service.submit(validDto)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.license_requests.create).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe('LicensingService', () => {
 
     expect(prisma.license_requests.create).toHaveBeenCalledWith({
       data: {
-        image_id: 'img-1',
+        media_id: 'img-1',
         requester_name: 'Editor XYZ',
         requester_email: 'editor@revista.com',
         intended_use: 'editorial',
@@ -177,7 +177,7 @@ describe('LicensingService', () => {
     prisma.license_requests.findMany.mockResolvedValue([
       {
         request_id: 'r1',
-        image_id: 'img-1',
+        media_id: 'img-1',
         requester_name: 'Editor XYZ',
         requester_email: 'editor@revista.com',
         intended_use: 'editorial',
@@ -185,7 +185,7 @@ describe('LicensingService', () => {
         budget: '$500 USD',
         status: 'new',
         created_at: new Date('2026-09-04T00:00:00Z'),
-        image: {
+        media: {
           album: { title: 'Calle', slug: 'calle-abc' },
           variants: [{ label: 'thumb', storage_key: 'thumb.webp' }],
         },
@@ -198,7 +198,7 @@ describe('LicensingService', () => {
       requestId: 'r1',
       collectionTitle: 'Calle',
       collectionSlug: 'calle-abc',
-      imageThumbUrl: 'https://cdn.test/thumb.webp',
+      mediaThumbUrl: 'https://cdn.test/thumb.webp',
       budget: '$500 USD',
     });
   });
@@ -334,7 +334,7 @@ describe('LicensingService', () => {
         intended_use: 'editorial',
         conditions: null,
         request_id: 'r1',
-        image: { storage_key: 'orig.jpg', mime_type: 'image/jpeg', rights: null },
+        media: { storage_key: 'orig.jpg', mime_type: 'image/jpeg', rights: null },
       },
     };
 

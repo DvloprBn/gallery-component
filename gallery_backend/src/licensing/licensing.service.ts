@@ -37,8 +37,8 @@ export interface LicenseView {
 /** Una solicitud de licencia tal como la ve el panel — con el contexto de la foto, su cotización y su licencia (si ya se emitió). */
 export interface LicenseRequestView {
   requestId: string;
-  imageId: string;
-  imageThumbUrl: string | null;
+  mediaId: string;
+  mediaThumbUrl: string | null;
   collectionTitle: string;
   collectionSlug: string;
   requesterName: string;
@@ -58,7 +58,7 @@ export interface LicenseRequestView {
 /** Lo que necesita `toView` de una fila — evita depender del tipo inferido de Prisma. */
 interface RequestRow {
   request_id: string;
-  image_id: string;
+  media_id: string;
   requester_name: string;
   requester_email: string;
   intended_use: string;
@@ -70,7 +70,7 @@ interface RequestRow {
   quoted_conditions: string | null;
   quote_expires_at: Date | null;
   quoted_at: Date | null;
-  image: {
+  media: {
     album: { title: string; slug: string };
     variants: { label: string; storage_key: string }[];
   };
@@ -83,7 +83,7 @@ interface RequestRow {
 
 /** Los `include` que necesita `toView` — se repiten en `list`, `quote` y `accept`. */
 const REQUEST_INCLUDE = {
-  image: {
+  media: {
     include: {
       album: { select: { title: true, slug: true } },
       variants: true,
@@ -127,11 +127,11 @@ export class LicensingService {
     dto: SubmitLicenseRequestDto,
     ip?: string,
   ): Promise<{ ok: true }> {
-    const image = await this.prisma.images.findUnique({
-      where: { image_id: dto.imageId },
+    const media = await this.prisma.media.findUnique({
+      where: { media_id: dto.mediaId },
       include: { album: { select: { visibility: true, title: true, slug: true } } },
     });
-    if (!image || image.status !== 'published' || image.album.visibility !== 'public') {
+    if (!media || media.status !== 'published' || media.album.visibility !== 'public') {
       throw new BadRequestException(
         'Esa foto no está disponible para solicitar una licencia.',
       );
@@ -145,7 +145,7 @@ export class LicensingService {
 
     await this.prisma.license_requests.create({
       data: {
-        image_id: image.image_id,
+        media_id: media.media_id,
         requester_name: dto.name.trim(),
         requester_email: dto.email.toLowerCase().trim(),
         intended_use: dto.intendedUse,
@@ -160,9 +160,9 @@ export class LicensingService {
 
     await this.mail.send(
       to,
-      `Solicitud de licencia — ${escapeHtml(image.album.title)}`,
+      `Solicitud de licencia — ${escapeHtml(media.album.title)}`,
       `<p><strong>${escapeHtml(dto.name)}</strong> &lt;${escapeHtml(dto.email)}&gt; pide licenciar ` +
-        `una foto de «${escapeHtml(image.album.title)}» para uso <strong>${escapeHtml(dto.intendedUse)}</strong>:</p>` +
+        `una foto de «${escapeHtml(media.album.title)}» para uso <strong>${escapeHtml(dto.intendedUse)}</strong>:</p>` +
         `<blockquote>${escapeHtml(dto.message)}</blockquote>` +
         (dto.budget ? `<p>Presupuesto: ${escapeHtml(dto.budget)}</p>` : ''),
     );
@@ -195,7 +195,7 @@ export class LicensingService {
   ): Promise<LicenseRequestView> {
     const existing = await this.prisma.license_requests.findUnique({
       where: { request_id: requestId },
-      include: { image: { include: { album: { select: { title: true, slug: true } } } } },
+      include: { media: { include: { album: { select: { title: true, slug: true } } } } },
     });
     if (!existing) {
       throw new NotFoundException('Solicitud no encontrada.');
@@ -220,9 +220,9 @@ export class LicensingService {
 
     await this.mail.send(
       updated.requester_email,
-      `Cotización de licencia — ${escapeHtml(existing.image.album.title)}`,
+      `Cotización de licencia — ${escapeHtml(existing.media.album.title)}`,
       `<p>Hola ${escapeHtml(updated.requester_name)},</p>` +
-        `<p>Aquí está la cotización para tu solicitud sobre «${escapeHtml(existing.image.album.title)}»:</p>` +
+        `<p>Aquí está la cotización para tu solicitud sobre «${escapeHtml(existing.media.album.title)}»:</p>` +
         `<p><strong>Precio:</strong> ${escapeHtml(dto.price)}</p>` +
         (dto.conditions
           ? `<p><strong>Condiciones:</strong> ${escapeHtml(dto.conditions)}</p>`
@@ -251,7 +251,7 @@ export class LicensingService {
   async accept(requestId: string): Promise<LicenseRequestView> {
     const request = await this.prisma.license_requests.findUnique({
       where: { request_id: requestId },
-      include: { image: { include: { album: { select: { title: true, slug: true } } } } },
+      include: { media: { include: { album: { select: { title: true, slug: true } } } } },
     });
     if (!request) {
       throw new NotFoundException('Solicitud no encontrada.');
@@ -269,7 +269,7 @@ export class LicensingService {
       const license = await tx.licenses.create({
         data: {
           request_id: request.request_id,
-          image_id: request.image_id,
+          media_id: request.media_id,
           licensee_name: request.requester_name,
           licensee_email: request.requester_email,
           intended_use: request.intended_use,
@@ -295,9 +295,9 @@ export class LicensingService {
 
     await this.mail.send(
       request.requester_email,
-      `Tu licencia está lista — ${escapeHtml(request.image.album.title)}`,
+      `Tu licencia está lista — ${escapeHtml(request.media.album.title)}`,
       `<p>Hola ${escapeHtml(request.requester_name)},</p>` +
-        `<p>Tu licencia para una foto de «${escapeHtml(request.image.album.title)}» quedó emitida. ` +
+        `<p>Tu licencia para una foto de «${escapeHtml(request.media.album.title)}» quedó emitida. ` +
         `Puedes descargar el archivo en alta resolución aquí:</p>` +
         `<p><a href="${downloadUrl}">${downloadUrl}</a></p>` +
         `<p>El enlace funciona <strong>una sola vez</strong> y caduca en ${DELIVERY_TOKEN_TTL_DAYS} días.</p>`,
@@ -334,7 +334,7 @@ export class LicensingService {
       include: {
         license: {
           include: {
-            image: true,
+            media: true,
           },
         },
       },
@@ -354,21 +354,21 @@ export class LicensingService {
       throw new NotFoundException();
     }
 
-    const image = token.license.image;
-    const object = await this.storage.read(image.storage_key);
+    const media = token.license.media;
+    const object = await this.storage.read(media.storage_key);
     if (!object) {
       throw new NotFoundException();
     }
 
     const rightsDefaults = await this.site.getRightsDefaults();
-    const baseRights = resolveRights(rightsDefaults, image.rights);
+    const baseRights = resolveRights(rightsDefaults, media.rights);
     const licenseeNote =
       `Licencia otorgada a ${token.license.licensee_name} <${token.license.licensee_email}> ` +
       `para uso ${token.license.intended_use}` +
       (token.license.conditions ? `: ${token.license.conditions}` : '') +
       '.';
     const buffer = await streamToBuffer(object.stream);
-    const format: EmbeddableFormat = image.mime_type === 'image/png' ? 'png' : 'jpeg';
+    const format: EmbeddableFormat = media.mime_type === 'image/png' ? 'png' : 'jpeg';
     const withLicenseeInfo = await this.metadata.embed(buffer, format, {
       ...baseRights,
       rightsStatement: `${baseRights.rightsStatement} ${licenseeNote}`.trim(),
@@ -390,14 +390,14 @@ export class LicensingService {
 
   /** Proyecta una fila (con sus relaciones ya incluidas) a la forma del panel. */
   private toView(row: RequestRow): LicenseRequestView {
-    const thumb = row.image.variants.find((v) => v.label === 'thumb');
+    const thumb = row.media.variants.find((v) => v.label === 'thumb');
     const delivery = row.license?.delivery_tokens[0] ?? null;
     return {
       requestId: row.request_id,
-      imageId: row.image_id,
-      imageThumbUrl: thumb ? this.storage.urlFor(thumb.storage_key, 'public') : null,
-      collectionTitle: row.image.album.title,
-      collectionSlug: row.image.album.slug,
+      mediaId: row.media_id,
+      mediaThumbUrl: thumb ? this.storage.urlFor(thumb.storage_key, 'public') : null,
+      collectionTitle: row.media.album.title,
+      collectionSlug: row.media.album.slug,
       requesterName: row.requester_name,
       requesterEmail: row.requester_email,
       intendedUse: row.intended_use,

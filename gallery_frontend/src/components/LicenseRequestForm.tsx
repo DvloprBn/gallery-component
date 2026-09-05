@@ -13,16 +13,16 @@ type Status = { kind: 'idle' | 'sending' | 'sent' } | { kind: 'error'; message: 
  * endpoint y mismas protecciones (honeypot, límite de envíos) que usa la
  * bandeja de gestión, `ContactForm` es el patrón que replica.
  *
- * @param props.imageId - UUID de la foto abierta en el lightbox; va oculto,
+ * @param props.mediaId - UUID de la foto abierta en el lightbox; va oculto,
  *   nunca lo edita quien solicita.
  * @param props.onClose - Cierra el panel del formulario (lo llama el propio
  *   lightbox al cambiar de foto o al hacer clic en "Cancelar").
  */
 export function LicenseRequestForm({
-  imageId,
+  mediaId,
   onClose,
 }: {
-  imageId: string;
+  mediaId: string;
   onClose: () => void;
 }) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
@@ -44,7 +44,7 @@ export function LicenseRequestForm({
     event.preventDefault();
     setStatus({ kind: 'sending' });
     try {
-      await apiFetch('/license-requests', { method: 'POST', body: { imageId, ...form } });
+      await apiFetch('/license-requests', { method: 'POST', body: { mediaId, ...form } });
       setStatus({ kind: 'sent' });
     } catch (err) {
       const message =

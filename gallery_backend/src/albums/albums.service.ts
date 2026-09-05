@@ -85,9 +85,9 @@ export class AlbumsService {
     const album = await this.getOwned(albumId, actor);
     this.assertThemeSize(dto.theme);
 
-    if (dto.coverImageId) {
-      const cover = await this.prisma.images.findUnique({
-        where: { image_id: dto.coverImageId },
+    if (dto.coverMediaId) {
+      const cover = await this.prisma.media.findUnique({
+        where: { media_id: dto.coverMediaId },
       });
       if (!cover || cover.album_id !== album.album_id) {
         throw new BadRequestException('La portada debe ser una imagen de este álbum.');
@@ -106,8 +106,8 @@ export class AlbumsService {
         ...(dto.theme !== undefined
           ? { theme: dto.theme as Prisma.InputJsonValue }
           : {}),
-        ...(dto.coverImageId !== undefined
-          ? { cover_image_id: dto.coverImageId }
+        ...(dto.coverMediaId !== undefined
+          ? { cover_media_id: dto.coverMediaId }
           : {}),
         ...(dto.featured !== undefined ? { featured: dto.featured } : {}),
       },
@@ -117,18 +117,18 @@ export class AlbumsService {
   /**
    * Borra un álbum y todo su contenido: primero los objetos del
    * almacenamiento (originales + derivados), luego las filas (la cascada de
-   * Prisma se encarga de `images`/`image_variants`/`album_share_tokens`).
+   * Prisma se encarga de `media`/`media_variants`/`album_share_tokens`).
    */
   async remove(albumId: string, actor: AuthenticatedUser): Promise<void> {
     const album = await this.getOwned(albumId, actor);
-    const images = await this.prisma.images.findMany({
+    const rows = await this.prisma.media.findMany({
       where: { album_id: album.album_id },
       include: { variants: true },
     });
 
-    for (const image of images) {
-      await this.storage.remove(image.storage_key);
-      for (const variant of image.variants) {
+    for (const media of rows) {
+      await this.storage.remove(media.storage_key);
+      for (const variant of media.variants) {
         await this.storage.remove(variant.storage_key);
       }
     }

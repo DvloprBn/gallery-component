@@ -101,8 +101,8 @@ function StudioInner() {
               <Link href={`/studio/${album.album_id}`} className="album-list__main">
                 <strong>{album.title}</strong>
                 <span className="muted">
-                  {album.image_count}{' '}
-                  {album.image_count === 1 ? 'fotografía' : 'fotografías'} ·{' '}
+                  {album.media_count}{' '}
+                  {album.media_count === 1 ? 'fotografía' : 'fotografías'} ·{' '}
                   <span className={`badge badge--${album.visibility}`}>
                     {album.visibility}
                   </span>{' '}

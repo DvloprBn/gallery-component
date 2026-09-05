@@ -11,7 +11,7 @@ import { Lightbox } from './Lightbox';
  * custom properties), pinta el layout elegido y gestiona el estado del
  * lightbox.
  *
- * @param props.gallery - La galería (álbum + imágenes) ya validada.
+ * @param props.gallery - La galería (álbum + contenido) ya validada.
  * @param props.backHref - Si se pasa, pinta un enlace de regreso sobre el
  *        título (p. ej. al índice de trabajo).
  */
@@ -23,7 +23,7 @@ export function GalleryView({
   backHref?: string;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const { album, images } = gallery;
+  const { album, media } = gallery;
 
   return (
     <main className="g-root" style={themeToCssVars(album.theme)}>
@@ -38,18 +38,18 @@ export function GalleryView({
           <p className="g-description">{album.description}</p>
         ) : null}
         <p className="g-meta">
-          {album.imageCount} {album.imageCount === 1 ? 'imagen' : 'imágenes'}
+          {album.mediaCount} {album.mediaCount === 1 ? 'elemento' : 'elementos'}
         </p>
       </header>
 
-      {images.length === 0 ? (
-        <p className="g-empty">Este álbum todavía no tiene imágenes.</p>
+      {media.length === 0 ? (
+        <p className="g-empty">Este álbum todavía no tiene contenido.</p>
       ) : (
         <GalleryLayout gallery={gallery} onOpen={setOpenIndex} />
       )}
 
       <Lightbox
-        images={images}
+        media={media}
         index={openIndex}
         onIndexChange={setOpenIndex}
       />

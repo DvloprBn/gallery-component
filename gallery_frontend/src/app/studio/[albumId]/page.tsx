@@ -11,17 +11,17 @@ import {
   type AlbumFormValues,
 } from '@/components/AlbumSettingsForm';
 import {
-  IMAGE_STATUSES,
-  IMAGE_STATUS_LABEL,
+  MEDIA_STATUSES,
+  MEDIA_STATUS_LABEL,
   type AlbumRow,
-  type ImageDto,
-  type ImageRights,
-  type ImageStatus,
+  type MediaDto,
+  type MediaRights,
+  type MediaStatus,
   type ShareTokenRow,
 } from '@/lib/studio-types';
 
 /** Los seis campos de derechos, siempre juntos (el backend reemplaza el JSON completo). */
-const RIGHTS_FIELDS: { key: keyof ImageRights; label: string }[] = [
+const RIGHTS_FIELDS: { key: keyof MediaRights; label: string }[] = [
   { key: 'rightsHolder', label: 'Titular' },
   { key: 'creator', label: 'Autor' },
   { key: 'creditLine', label: 'Crédito' },
@@ -43,17 +43,17 @@ function Manage() {
   const router = useRouter();
 
   const [album, setAlbum] = useState<AlbumRow | null>(null);
-  const [images, setImages] = useState<ImageDto[]>([]);
+  const [media, setMedia] = useState<MediaDto[]>([]);
   const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [a, imgs] = await Promise.all([
         apiFetch<AlbumRow>(`/albums/${albumId}`),
-        apiFetch<ImageDto[]>(`/albums/${albumId}/images`),
+        apiFetch<MediaDto[]>(`/albums/${albumId}/media`),
       ]);
       setAlbum(a);
-      setImages(imgs);
+      setMedia(imgs);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
         setNotFound(true);
@@ -100,11 +100,11 @@ function Manage() {
       </section>
 
       <section className="panel-section">
-        <h2>Imágenes ({images.length})</h2>
-        <ImageGrid
+        <h2>Contenido ({media.length})</h2>
+        <MediaGrid
           albumId={albumId}
-          images={images}
-          coverId={album.cover_image_id}
+          media={media}
+          coverId={album.cover_media_id}
           onChange={load}
         />
       </section>
@@ -146,7 +146,7 @@ function Uploader({ albumId, onDone }: { albumId: string; onDone: () => Promise<
       const form = new FormData();
       form.append('file', list[i]);
       try {
-        await apiFetch(`/albums/${albumId}/images`, { method: 'POST', body: form });
+        await apiFetch(`/albums/${albumId}/media`, { method: 'POST', body: form });
         setRows((r) => r.map((x, idx) => (idx === i ? { ...x, state: 'ok' } : x)));
       } catch (err) {
         const msg = err instanceof ApiError ? err.message : 'error';
@@ -182,44 +182,44 @@ function Uploader({ albumId, onDone }: { albumId: string; onDone: () => Promise<
 }
 
 /**
- * Rejilla de imágenes: curar (estado de publicación, individual y en bloque),
+ * Rejilla del contenido: curar (estado de publicación, individual y en bloque),
  * editar alt/pie, elegir portada, borrar y reordenar arrastrando.
  *
  * La curación es el eje de la Fase 10b: se sube en ancho y solo la selección
  * `published` se ve en la galería pública.
  */
-function ImageGrid({
+function MediaGrid({
   albumId,
-  images,
+  media,
   coverId,
   onChange,
 }: {
   albumId: string;
-  images: ImageDto[];
+  media: MediaDto[];
   coverId: string | null;
   onChange: () => Promise<void>;
 }) {
-  const [order, setOrder] = useState<ImageDto[]>(images);
+  const [order, setOrder] = useState<MediaDto[]>(media);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [rightsOpenId, setRightsOpenId] = useState<string | null>(null);
   const dragFrom = useRef<number | null>(null);
 
   useEffect(() => {
-    setOrder(images);
+    setOrder(media);
     setSelected(new Set());
-  }, [images]);
+  }, [media]);
 
   const counts = order.reduce(
     (acc, i) => ({ ...acc, [i.status]: (acc[i.status] ?? 0) + 1 }),
-    {} as Record<ImageStatus, number>,
+    {} as Record<MediaStatus, number>,
   );
 
-  const persistOrder = async (next: ImageDto[]) => {
+  const persistOrder = async (next: MediaDto[]) => {
     setOrder(next);
-    await apiFetch(`/albums/${albumId}/images/reorder`, {
+    await apiFetch(`/albums/${albumId}/media/reorder`, {
       method: 'POST',
-      body: { orderedIds: next.map((i) => i.imageId) },
+      body: { orderedIds: next.map((i) => i.mediaId) },
     }).catch(() => onChange());
   };
 
@@ -234,7 +234,7 @@ function ImageGrid({
   };
 
   const updateMeta = async (id: string, patch: { altText?: string; caption?: string }) => {
-    await apiFetch(`/images/${id}`, { method: 'PATCH', body: patch });
+    await apiFetch(`/media/${id}`, { method: 'PATCH', body: patch });
   };
 
   /**
@@ -242,38 +242,38 @@ function ImageGrid({
    * objeto `rights` completo, así que siempre se manda el borrador entero
    * (nunca un campo suelto, o se perderían los demás).
    */
-  const saveRights = async (id: string, rights: ImageRights) => {
-    const updated = await apiFetch<ImageDto>(`/images/${id}`, {
+  const saveRights = async (id: string, rights: MediaRights) => {
+    const updated = await apiFetch<MediaDto>(`/media/${id}`, {
       method: 'PATCH',
       body: { rights },
     });
-    setOrder((cur) => cur.map((i) => (i.imageId === id ? updated : i)));
+    setOrder((cur) => cur.map((i) => (i.mediaId === id ? updated : i)));
   };
 
   /** Borra el override — la imagen vuelve a heredar todo de `site.rights`. */
   const clearRights = async (id: string) => {
-    const updated = await apiFetch<ImageDto>(`/images/${id}`, {
+    const updated = await apiFetch<MediaDto>(`/media/${id}`, {
       method: 'PATCH',
       body: { rights: null },
     });
-    setOrder((cur) => cur.map((i) => (i.imageId === id ? updated : i)));
+    setOrder((cur) => cur.map((i) => (i.mediaId === id ? updated : i)));
   };
 
-  const setStatus = async (id: string, status: ImageStatus) => {
+  const setStatus = async (id: string, status: MediaStatus) => {
     // Optimista: pinta el cambio y confirma contra el servidor.
-    setOrder((cur) => cur.map((i) => (i.imageId === id ? { ...i, status } : i)));
-    await apiFetch(`/images/${id}`, { method: 'PATCH', body: { status } }).catch(
+    setOrder((cur) => cur.map((i) => (i.mediaId === id ? { ...i, status } : i)));
+    await apiFetch(`/media/${id}`, { method: 'PATCH', body: { status } }).catch(
       () => onChange(),
     );
   };
 
-  const bulkStatus = async (status: ImageStatus) => {
+  const bulkStatus = async (status: MediaStatus) => {
     if (selected.size === 0) return;
     setBusy(true);
     try {
-      await apiFetch(`/albums/${albumId}/images/status`, {
+      await apiFetch(`/albums/${albumId}/media/status`, {
         method: 'POST',
-        body: { imageIds: [...selected], status },
+        body: { mediaIds: [...selected], status },
       });
       await onChange();
     } finally {
@@ -289,13 +289,13 @@ function ImageGrid({
     });
 
   const setCover = async (id: string) => {
-    await apiFetch(`/albums/${albumId}`, { method: 'PATCH', body: { coverImageId: id } });
+    await apiFetch(`/albums/${albumId}`, { method: 'PATCH', body: { coverMediaId: id } });
     await onChange();
   };
 
   const remove = async (id: string) => {
     if (!confirm('¿Borrar esta imagen?')) return;
-    await apiFetch(`/images/${id}`, { method: 'DELETE' });
+    await apiFetch(`/media/${id}`, { method: 'DELETE' });
     await onChange();
   };
 
@@ -307,14 +307,14 @@ function ImageGrid({
     <div className="stack" style={{ maxWidth: 'none', gap: '1rem' }}>
       <div className="img-toolbar">
         <span className="muted">
-          {(['published', 'draft', 'archived'] as ImageStatus[])
-            .map((s) => `${counts[s] ?? 0} ${IMAGE_STATUS_LABEL[s].toLowerCase()}`)
+          {(['published', 'draft', 'archived'] as MediaStatus[])
+            .map((s) => `${counts[s] ?? 0} ${MEDIA_STATUS_LABEL[s].toLowerCase()}`)
             .join(' · ')}
         </span>
         {selected.size > 0 && (
           <span className="img-bulk">
             <strong>{selected.size} seleccionada{selected.size === 1 ? '' : 's'}:</strong>
-            {IMAGE_STATUSES.map((s) => (
+            {MEDIA_STATUSES.map((s) => (
               <button
                 key={s}
                 type="button"
@@ -322,7 +322,7 @@ function ImageGrid({
                 disabled={busy}
                 onClick={() => void bulkStatus(s)}
               >
-                {IMAGE_STATUS_LABEL[s]}
+                {MEDIA_STATUS_LABEL[s]}
               </button>
             ))}
             <button
@@ -339,9 +339,9 @@ function ImageGrid({
       <ol className="img-grid">
         {order.map((image, index) => (
           <li
-            key={image.imageId}
+            key={image.mediaId}
             className={`img-card img-card--${image.status}${
-              selected.has(image.imageId) ? ' is-selected' : ''
+              selected.has(image.mediaId) ? ' is-selected' : ''
             }`}
             draggable
             onDragStart={() => (dragFrom.current = index)}
@@ -351,8 +351,8 @@ function ImageGrid({
             <label className="img-select">
               <input
                 type="checkbox"
-                checked={selected.has(image.imageId)}
-                onChange={() => toggleSel(image.imageId)}
+                checked={selected.has(image.mediaId)}
+                onChange={() => toggleSel(image.mediaId)}
               />
             </label>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -360,11 +360,11 @@ function ImageGrid({
             <select
               className="img-meta"
               value={image.status}
-              onChange={(e) => void setStatus(image.imageId, e.target.value as ImageStatus)}
+              onChange={(e) => void setStatus(image.mediaId, e.target.value as MediaStatus)}
             >
-              {IMAGE_STATUSES.map((s) => (
+              {MEDIA_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {IMAGE_STATUS_LABEL[s]}
+                  {MEDIA_STATUS_LABEL[s]}
                 </option>
               ))}
             </select>
@@ -372,27 +372,27 @@ function ImageGrid({
               className="img-meta"
               placeholder="Texto alternativo"
               defaultValue={image.altText ?? ''}
-              onBlur={(e) => void updateMeta(image.imageId, { altText: e.target.value })}
+              onBlur={(e) => void updateMeta(image.mediaId, { altText: e.target.value })}
             />
             <input
               className="img-meta"
               placeholder="Pie de foto"
               defaultValue={image.caption ?? ''}
-              onBlur={(e) => void updateMeta(image.imageId, { caption: e.target.value })}
+              onBlur={(e) => void updateMeta(image.mediaId, { caption: e.target.value })}
             />
             <div className="img-actions">
               <button
                 type="button"
                 className="link-button"
-                disabled={coverId === image.imageId}
-                onClick={() => void setCover(image.imageId)}
+                disabled={coverId === image.mediaId}
+                onClick={() => void setCover(image.mediaId)}
               >
-                {coverId === image.imageId ? 'Portada' : 'Hacer portada'}
+                {coverId === image.mediaId ? 'Portada' : 'Hacer portada'}
               </button>
               <button
                 type="button"
                 className="link-button danger"
-                onClick={() => void remove(image.imageId)}
+                onClick={() => void remove(image.mediaId)}
               >
                 Borrar
               </button>
@@ -402,17 +402,17 @@ function ImageGrid({
               className="link-button"
               style={{ fontSize: '0.76rem' }}
               onClick={() =>
-                setRightsOpenId((cur) => (cur === image.imageId ? null : image.imageId))
+                setRightsOpenId((cur) => (cur === image.mediaId ? null : image.mediaId))
               }
             >
-              Derechos {rightsOpenId === image.imageId ? '▲' : '▾'}
+              Derechos {rightsOpenId === image.mediaId ? '▲' : '▾'}
               {Object.keys(image.rights ?? {}).length > 0 ? ' •' : ''}
             </button>
-            {rightsOpenId === image.imageId ? (
+            {rightsOpenId === image.mediaId ? (
               <RightsEditor
                 initial={image.rights ?? {}}
-                onSave={(r) => saveRights(image.imageId, r)}
-                onClear={() => clearRights(image.imageId)}
+                onSave={(r) => saveRights(image.mediaId, r)}
+                onClear={() => clearRights(image.mediaId)}
               />
             ) : null}
           </li>
@@ -432,11 +432,11 @@ function RightsEditor({
   onSave,
   onClear,
 }: {
-  initial: ImageRights;
-  onSave: (rights: ImageRights) => Promise<void>;
+  initial: MediaRights;
+  onSave: (rights: MediaRights) => Promise<void>;
   onClear: () => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<ImageRights>(initial);
+  const [draft, setDraft] = useState<MediaRights>(initial);
   const [busy, setBusy] = useState(false);
   const hasOverride = Object.values(initial).some((v) => v);
 

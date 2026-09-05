@@ -73,7 +73,7 @@ volumen/espera reales.
 
 - [x] `GET /site` es `@Public()` pero **solo proyecta** los campos públicos (`SiteService.toPublic`)
       — nunca la columna `id` ni `updated_at`.
-- [x] `PATCH /site` valida que `heroImageId` pertenezca a una imagen de un álbum **`public`**
+- [x] `PATCH /site` valida que `heroMediaId` pertenezca a una imagen de un álbum **`public`**
       (si no → 400, sin escribir). El hero se sirve **sin firma** en una página cacheable; una
       imagen de un álbum privado/unlisted ahí sería una fuga.
 - [x] `POST /contact` **honeypot**: el campo `website` no se muestra (CSS `.hp-field` fuera de
@@ -162,8 +162,8 @@ dev en `:3050`; restaura `site_settings` y borra los mensajes de prueba al termi
 | S1 | `GET /site` sin sesión | 200; el cuerpo NO trae `id` ni `updatedAt` | ✅ Probado 2026-09-02 |
 | S2 | `PATCH /site` sin sesión | → **401** | ✅ Probado 2026-09-02 |
 | S3 | `PATCH /site` como `usuario` | → **403** (solo `admin`/`director`/`super`) | ✅ Probado 2026-09-02 |
-| S4 | `PATCH /site` `heroImageId` inexistente | UUID válido pero sin fila → **400**, sin escribir | ✅ Probado 2026-09-02 |
-| S5 | `PATCH /site` `heroImageId` de álbum no público | imagen de un álbum `private`/`unlisted` → **400** | ✅ Probado 2026-09-02 |
+| S4 | `PATCH /site` `heroMediaId` inexistente | UUID válido pero sin fila → **400**, sin escribir | ✅ Probado 2026-09-02 |
+| S5 | `PATCH /site` `heroMediaId` de álbum no público | imagen de un álbum `private`/`unlisted` → **400** | ✅ Probado 2026-09-02 |
 | S6 | `PATCH /site` `heroImageId: null` | 200, `hero` queda en `null` (no rompe) | ✅ Probado 2026-09-02 |
 | S7 | `GET /galleries?featured=true` | una colección `unlisted`+`featured` **no** aparece | ✅ Probado 2026-09-02 |
 | S8 | `POST /contact` honeypot | `website` con contenido → **202** y **0 filas** nuevas | ✅ Probado 2026-09-02 |
@@ -181,7 +181,7 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 
 | # | Prueba | Qué valida | Estado |
 |---|---|---|---|
-| L1 | `POST /license-requests` con `imageId` inexistente | → **400**, sin guardar ni avisar | ✅ Probado 2026-09-04 |
+| L1 | `POST /license-requests` con `mediaId` inexistente | → **400**, sin guardar ni avisar | ✅ Probado 2026-09-04 |
 | L2 | `POST /license-requests` de una foto no publicada o de álbum no público | → **400** — no se puede licenciar lo que no se exhibe | ✅ Cubierto por diseño (mismo mecanismo que L1) |
 | L3 | Honeypot | `website` con contenido → **202** y **0 filas** nuevas | ✅ Probado 2026-09-04 |
 | L4 | Validación | campo extra (`status`) → 400 (whitelist); `intendedUse` fuera de la lista → 400 | ✅ Probado 2026-09-04 |
@@ -197,7 +197,7 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L14 | Entrega de un solo uso — la carrera | dos descargas del **mismo token**: la primera → 200 con el archivo; la segunda → **404**, idéntico a un token inválido. El "claim" es atómico (`updateMany` condicionado a `used_at: null`, se revisa `count`) — no hay ventana donde ambas puedan colar | ✅ Probado (unit, la carrera) + ✅ Probado en vivo (secuencial) 2026-09-04 |
 | L15 | Entrega — token inventado / caducado / ya usado | los tres casos devuelven el mismo 404 (indistinguibles, mismo principio que las URLs firmadas de `/media/:key`); nunca se toca el almacenamiento si el token no pasa la validación | ✅ Probado 2026-09-04 |
 | L16 | Entrega — el archivo servido | `Content-Disposition: attachment`; es el **original** limpio de resolución completa (no un derivado); lleva los metadatos de derechos **más una nota de a quién se licenció**, incrustada al vuelo solo para esa descarga (trazabilidad si el archivo se filtra después) | ✅ Probado 2026-09-04 (descarga real ≈500 KB) |
-| L17 | Botón público "Solicitar licencia" del lightbox (Fase 12d) | Es solo frontend — llama a `POST /license-requests` con el mismo `imageId`/cuerpo que ya cubren L1–L5; no abre superficie nueva. Verificado que el cuerpo exacto que arma `LicenseRequestForm` (incluido `website` vacío) pasa por las mismas reglas: `imageId` de una foto real → 202 y llega a la bandeja; `website` relleno → 202 pero **nunca** llega a la bandeja (mismo honeypot que L3) | ✅ Probado 2026-09-04 (`verify-12d.mjs`, 12/12 checks) |
+| L17 | Botón público "Solicitar licencia" del lightbox (Fase 12d) | Es solo frontend — llama a `POST /license-requests` con el mismo `mediaId`/cuerpo que ya cubren L1–L5; no abre superficie nueva. Verificado que el cuerpo exacto que arma `LicenseRequestForm` (incluido `website` vacío) pasa por las mismas reglas: `mediaId` de una foto real → 202 y llega a la bandeja; `website` relleno → 202 pero **nunca** llega a la bandeja (mismo honeypot que L3) | ✅ Probado 2026-09-04 (`verify-12d.mjs`, 12/12 checks) |
 
 ---
 

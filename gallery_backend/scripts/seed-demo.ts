@@ -102,7 +102,7 @@ async function main(): Promise<void> {
       new Blob([new Uint8Array(buffer)], { type: 'image/jpeg' }),
       `demo-${i + 1}.jpg`,
     );
-    const up = await fetch(`${API}/albums/${album.album_id}/images`, {
+    const up = await fetch(`${API}/albums/${album.album_id}/media`, {
       method: 'POST',
       headers: { cookie },
       body: form,

@@ -71,7 +71,7 @@ export class UpdateAlbumDto {
 
   @IsOptional()
   @IsUUID()
-  coverImageId?: string;
+  coverMediaId?: string;
 
   @IsOptional()
   @IsBoolean()

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { GalleryImage } from '@/lib/gallery-schema';
+import type { GalleryMedia } from '@/lib/gallery-schema';
 import { useSite } from '@/lib/site';
 import { LicenseRequestForm } from './LicenseRequestForm';
 
@@ -11,16 +11,16 @@ import { LicenseRequestForm } from './LicenseRequestForm';
  * clic en el fondo. Las transiciones son CSS (clase `is-open`); no hay
  * librería de animación. `prefers-reduced-motion` lo neutraliza el CSS global.
  *
- * @param props.images - Lista completa de imágenes de la galería.
+ * @param props.media - Lista completa del contenido de la galería.
  * @param props.index - Índice abierto, o `null` si está cerrado.
  * @param props.onIndexChange - Cambia el índice (o `null` para cerrar).
  */
 export function Lightbox({
-  images,
+  media,
   index,
   onIndexChange,
 }: {
-  images: GalleryImage[];
+  media: GalleryMedia[];
   index: number | null;
   onIndexChange: (next: number | null) => void;
 }) {
@@ -51,9 +51,9 @@ export function Lightbox({
   const go = useCallback(
     (delta: number) => {
       if (index === null) return;
-      onIndexChange((index + delta + images.length) % images.length);
+      onIndexChange((index + delta + media.length) % media.length);
     },
-    [index, images.length, onIndexChange],
+    [index, media.length, onIndexChange],
   );
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export function Lightbox({
   }, [isOpen, go, onIndexChange]);
 
   if (!mounted) return null;
-  const current = index !== null ? images[index] : images[0];
+  const current = index !== null ? media[index] : media[0];
 
   return (
     <div
@@ -104,7 +104,7 @@ export function Lightbox({
       </button>
       <figure className="g-lightbox-frame" onClick={(event) => event.stopPropagation()}>
         <img
-          key={current.imageId}
+          key={current.mediaId}
           className="g-lightbox-img"
           src={current.urls.large ?? current.urls.medium ?? current.urls.original}
           alt={current.altText ?? ''}
@@ -120,7 +120,7 @@ export function Lightbox({
         ) : null}
         {showLicenseForm ? (
           <LicenseRequestForm
-            imageId={current.imageId}
+            mediaId={current.mediaId}
             onClose={() => setShowLicenseForm(false)}
           />
         ) : (
@@ -145,7 +145,7 @@ export function Lightbox({
       </button>
       {index !== null ? (
         <span className="g-lightbox-count">
-          {index + 1} / {images.length}
+          {index + 1} / {media.length}
         </span>
       ) : null}
     </div>

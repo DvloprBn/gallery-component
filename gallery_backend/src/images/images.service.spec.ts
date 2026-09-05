@@ -15,14 +15,14 @@ const actor: AuthenticatedUser = {
 
 describe('ImagesService.setStatusBulk', () => {
   let prisma: {
-    images: { findMany: jest.Mock; updateMany: jest.Mock };
+    media: { findMany: jest.Mock; updateMany: jest.Mock };
   };
   let albums: { getOwned: jest.Mock };
   let service: ImagesService;
 
   beforeEach(() => {
     prisma = {
-      images: {
+      media: {
         findMany: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
@@ -41,33 +41,33 @@ describe('ImagesService.setStatusBulk', () => {
   });
 
   it('cambia el estado si todas las imágenes son del álbum', async () => {
-    prisma.images.findMany.mockResolvedValue([
-      { image_id: 'i1' },
-      { image_id: 'i2' },
+    prisma.media.findMany.mockResolvedValue([
+      { media_id: 'i1' },
+      { media_id: 'i2' },
     ]);
 
     const result = await service.setStatusBulk('alb1', actor, {
-      imageIds: ['i1', 'i2'],
+      mediaIds: ['i1', 'i2'],
       status: 'published',
     });
 
     expect(albums.getOwned).toHaveBeenCalledWith('alb1', actor);
-    expect(prisma.images.updateMany).toHaveBeenCalledWith({
-      where: { album_id: 'alb1', image_id: { in: ['i1', 'i2'] } },
+    expect(prisma.media.updateMany).toHaveBeenCalledWith({
+      where: { album_id: 'alb1', media_id: { in: ['i1', 'i2'] } },
       data: { status: 'published' },
     });
     expect(result).toEqual({ ok: true, updated: 2 });
   });
 
   it('rechaza si algún id no pertenece al álbum (sin escribir)', async () => {
-    prisma.images.findMany.mockResolvedValue([{ image_id: 'i1' }]); // falta 'ajeno'
+    prisma.media.findMany.mockResolvedValue([{ media_id: 'i1' }]); // falta 'ajeno'
 
     await expect(
       service.setStatusBulk('alb1', actor, {
-        imageIds: ['i1', 'ajeno'],
+        mediaIds: ['i1', 'ajeno'],
         status: 'archived',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.images.updateMany).not.toHaveBeenCalled();
+    expect(prisma.media.updateMany).not.toHaveBeenCalled();
   });
 });

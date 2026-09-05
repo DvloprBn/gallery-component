@@ -59,7 +59,7 @@ export class UpdateSiteDto {
   @IsOptional()
   @ValidateIf((_, value) => value !== null)
   @IsUUID()
-  heroImageId?: string | null;
+  heroMediaId?: string | null;
 
   // ── Marca de agua (Fase 11, D9) ──
 

@@ -242,7 +242,7 @@ class Api {
   async upload(albumId: string, buffer: Buffer, name: string): Promise<void> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(buffer)], { type: 'image/jpeg' }), name);
-    const res = await fetch(`${API}/albums/${albumId}/images`, {
+    const res = await fetch(`${API}/albums/${albumId}/media`, {
       method: 'POST', headers: { cookie: this.cookie }, body: form,
     });
     if (!res.ok) throw new Error(`Subida "${name}" → ${res.status} ${await res.text()}`);
@@ -253,10 +253,10 @@ interface AlbumRow {
   album_id: string;
   slug: string;
   title: string;
-  image_count: number;
-  cover_image_id: string | null;
+  media_count: number;
+  cover_media_id: string | null;
 }
-interface ImageRow { imageId: string }
+interface MediaRow { mediaId: string }
 
 async function main(): Promise<void> {
   const api = new Api();
@@ -274,7 +274,7 @@ async function main(): Promise<void> {
   // El hero cuelga de una foto; si vamos a recrear "Calle", primero lo soltamos
   // para que el borrado no falle por la referencia.
   if (COLLECTIONS.some((c) => c.title === 'Calle' && byTitle.has('Calle'))) {
-    await api.patchJson('/site', { heroImageId: null });
+    await api.patchJson('/site', { heroMediaId: null });
   }
 
   let heroAlbumSlug: string | null = null;
@@ -309,21 +309,21 @@ async function main(): Promise<void> {
     total += files.length;
 
     // Curación: publicar una selección repartida, archivar el resto.
-    const images = await api.json<ImageRow[]>(`/albums/${album.album_id}/images`);
+    const items = await api.json<MediaRow[]>(`/albums/${album.album_id}/media`);
     const publishIds = new Set(
-      spread(images, col.published).map((im) => im.imageId),
+      spread(items, col.published).map((im) => im.mediaId),
     );
-    const toPublish = images.filter((im) => publishIds.has(im.imageId)).map((im) => im.imageId);
-    const toArchive = images.filter((im) => !publishIds.has(im.imageId)).map((im) => im.imageId);
+    const toPublish = items.filter((im) => publishIds.has(im.mediaId)).map((im) => im.mediaId);
+    const toArchive = items.filter((im) => !publishIds.has(im.mediaId)).map((im) => im.mediaId);
     if (toPublish.length > 0) {
-      await api.postJson(`/albums/${album.album_id}/images/status`, {
-        imageIds: toPublish,
+      await api.postJson(`/albums/${album.album_id}/media/status`, {
+        mediaIds: toPublish,
         status: 'published',
       });
     }
     if (toArchive.length > 0) {
-      await api.postJson(`/albums/${album.album_id}/images/status`, {
-        imageIds: toArchive,
+      await api.postJson(`/albums/${album.album_id}/media/status`, {
+        mediaIds: toArchive,
         status: 'archived',
       });
     }
@@ -334,7 +334,7 @@ async function main(): Promise<void> {
     // La portada tiene que ser una foto publicada.
     if (toPublish.length > 0) {
       await api.patchJson(`/albums/${album.album_id}`, {
-        coverImageId: toPublish[0],
+        coverMediaId: toPublish[0],
       });
     }
     if (col.title === 'Calle') heroAlbumSlug = album.slug;
@@ -342,10 +342,10 @@ async function main(): Promise<void> {
 
   // 2. Hero de la portada — una foto de "Calle".
   if (heroAlbumSlug) {
-    const gallery = await api.json<{ images: ImageRow[] }>(`/g/${heroAlbumSlug}`);
-    const pick = gallery.images[Math.min(2, gallery.images.length - 1)];
+    const gallery = await api.json<{ media: MediaRow[] }>(`/g/${heroAlbumSlug}`);
+    const pick = gallery.media[Math.min(2, gallery.media.length - 1)];
     if (pick) {
-      await api.patchJson('/site', { heroImageId: pick.imageId });
+      await api.patchJson('/site', { heroMediaId: pick.mediaId });
       console.log('Hero de la portada fijado.');
     }
   }
