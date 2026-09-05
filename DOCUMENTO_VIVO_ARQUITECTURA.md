@@ -1626,3 +1626,217 @@ redescubriéndolo: cualquier verificación de `next build` dentro de `gallery_fr
 Con esto se cierra la Fase 12 completa (12a solicitud pública → 12b cotizar → 12c emitir y entregar
 → 12d público y pulido): un fotógrafo puede publicar, proteger y vender su obra sin regalarla ni
 depender de otra plataforma, de punta a punta.
+
+## 19. Fase 14 — Video (diseño, sin construir — 2026-09-05)
+
+> **Estado**: solo diseño. El proyecto está en pausa hasta el despliegue y las claves de Stripe;
+> esta sección registra las decisiones para poder arrancar sin re-discutirlas. Nada de código aún.
+> Decisión marco en `PLAN_DESARROLLO.md` §4 **D14**.
+
+El dueño preguntó si se pueden subir videos (hoy no: el pipeline solo acepta `jpeg/png/webp/avif`)
+y pidió diseñar la fase. Delegó las decisiones técnicas al arquitecto; van resueltas abajo con su
+*por qué*.
+
+### 19.0 Principios heredados (no se tocan)
+
+El video pasa por **exactamente las mismas reglas** que ya defienden a las fotos — no se relajan
+"porque es otro formato":
+
+1. **Validación por contenido real** antes de tocar el almacenamiento: `ffprobe` sobre el archivo,
+   nunca confiar en la extensión ni en el `Content-Type` del navegador (igual que hoy `sharp`
+   inspecciona los magic bytes, no el nombre).
+2. **Re-encode obligatorio**: jamás se sirve el archivo tal cual lo subió el usuario. `ffmpeg`
+   re-codifica a un *master* normalizado y con `-map_metadata -1` (strip total — el equivalente a
+   quitar el EXIF), y después se re-inyectan **solo** los derechos con `exiftool` (el binario ya
+   está en la imagen desde la Fase 11).
+3. **El original de alta calidad nunca es público.** Público = renditions con marca de agua.
+   Master limpio = solo por una **entrega de licencia de un solo uso** (`delivery_tokens`, Fase 12c,
+   sin cambios).
+4. **Trabajo pesado = job en segundo plano** (202 + estado consultable, progreso en memoria del
+   proceso — nunca Redis, misma regla que la regeneración de marca de agua de la Fase 11).
+5. **Límites duros y explícitos** contra DoS de subida/transcodificación.
+
+### 19.1 Modelo de datos — unificar `images` → `media`
+
+Se elige una **tabla `media` con discriminador `kind`** (`photo` / `video`) en vez de una tabla
+`videos` separada. Razón: `images` es hoy una pieza central con la que hablan `image_variants`,
+`images.rights`, la marca de agua, `license_requests.image_id`, `licenses.image_id`,
+`site_settings.hero_image_id` y el seed. Una tabla paralela duplicaría todos esos caminos; un
+discriminador da **una sola ruta** para variantes, derechos, licencias y entrega. El momento es
+ideal: **no hay producción ni datos reales** (el único Postgres es el de dev, y `seed-portfolio.ts`
+lo rehace convergente en cada corrida), así que la migración grande no arriesga nada — y
+retrofitear esto después del despliegue es justo lo que la práctica del proyecto quiere evitar.
+
+Migración `xxxx_media_unification` (design, no escrita):
+
+```prisma
+enum media_kind {
+  photo
+  video
+}
+
+model media {
+  media_id     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  album_id     String        @db.Uuid
+  kind         media_kind
+  status       media_status  // published/draft/archived — renombrado de image_status, mismos valores
+  position     Int
+  storage_key  String        // el MASTER limpio: JPEG/PNG (foto) o MP4 alto sin marca (video). Nunca público.
+  mime_type    String
+  width        Int
+  height       Int
+  blurhash     String?
+  alt_text     String?
+  caption      String?
+  rights       Json?
+
+  // Solo video (null para foto):
+  duration_ms      Int?
+  frame_rate       Decimal?  @db.Decimal(6, 3)
+  video_codec      String?   // 'h264' | 'hevc' | 'vp9' | 'av1'
+  audio_codec      String?   // 'aac' | null si es mudo
+  has_audio        Boolean   @default(false)
+  hls_manifest_key String?   // ruta del .m3u8 maestro; null hasta que el job termina
+  poster_key       String?   // frame extraído (WebP) — la "portada" del video
+  processing_error String?   // si el transcode falló, el gestor lo ve aquí
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  album            albums             @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
+  variants         media_variants[]
+  license_requests license_requests[]
+  licenses         licenses[]
+
+  @@index([album_id, status])
+  @@index([album_id, position])
+}
+
+model media_variants {
+  variant_id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  media_id     String  @db.Uuid
+  label        String  // foto: 'thumb'|'small'|'medium'|'large'
+                       // video: 'poster' | 'preview' (MP4 720p progresivo con marca) |
+                       //        'hls-360'|'hls-540'|'hls-720'|'hls-1080'
+  storage_key  String
+  mime_type    String
+  width        Int
+  height       Int
+  bytes        Int
+  bitrate_kbps Int?    // solo renditions de video
+
+  media media @relation(fields: [media_id], references: [media_id], onDelete: Cascade)
+  @@unique([media_id, label])
+}
+```
+
+- `image_id` → `media_id` en `license_requests`, `licenses`, `site_settings.hero_image_id` →
+  `hero_media_id`. Backfill determinista: cada `images` → `media` con `kind = photo`,
+  `image_variants` → `media_variants`. Sin pérdida.
+- **`hero_media_id` puede apuntar a un video** → la portada del sitio puede ser un video en loop
+  (hero cinematográfico) — una de las piezas "de vitrina" más vistosas de la fase.
+
+### 19.2 Pipeline de ingesta (`VideoPipelineService`, hermano de `ImagePipelineService`)
+
+Dependencia nueva: **`ffmpeg` + `ffprobe`** en `Dockerfile` y `Dockerfile.dev`
+(`apt-get install -y ffmpeg`, versión fijada). Igual que con `exiftool`, se invoca con `execFile`
+y un **array de argumentos** — nunca por shell, nunca interpolando input del usuario.
+
+`POST /albums/:id/media` (la subida detecta `kind` por `ffprobe`; el endpoint de imágenes se
+generaliza o se añade uno hermano):
+
+1. **Validar por contenido** — `ffprobe -v error -show_format -show_streams`. Rechazo **400** si:
+   - no hay stream de video, o el contenedor no es `mp4/mov/webm/mkv`;
+   - `duration > VIDEO_MAX_DURATION_S` (default **120** — es un portafolio, no una CDN de vídeo);
+   - `width·height > VIDEO_MAX_PIXELS` (default 1920×1080) o `size > VIDEO_MAX_INPUT_BYTES`
+     (default **500 MB**);
+   - `nb_frames / duration` da un frame rate imposible (bomba de descompresión de vídeo);
+   - hay más de un stream de video o de audio (ficheros deliberadamente raros).
+2. **Aceptar rápido** — guardar el archivo en almacenamiento temporal, crear la fila `media`
+   (`kind=video`, `status=draft`, `hls_manifest_key=null`), responder **202** con `mediaId`.
+3. **Job en segundo plano** (`void this.transcode(mediaId)`; progreso en memoria; consulta con
+   `GET /media/:id/processing`). Cola con **concurrencia 1** (`VIDEO_MAX_CONCURRENT_TRANSCODES`) y
+   `timeout` de proceso, para que la CPU no se sature:
+   - **a. Master limpio** — `ffmpeg -i in -map 0:v:0 -map 0:a:0? -c:v libx264 -preset slow -crf 18
+     -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart -map_metadata -1 master.mp4`.
+     Es el `storage_key`. **Nunca público.**
+   - **b. Póster** — `ffmpeg -ss <10% dur> -i master -frames:v 1 poster.png` → pasa por el
+     `ImagePipelineService` existente (WebP + BlurHash). Llena `poster_key` y `blurhash`.
+   - **c. Marca de agua** (si el álbum es `public`) — se reutiliza el SVG que ya construye
+     `WatermarkService`, rasterizado a PNG, aplicado con el filtro `overlay` de `ffmpeg` a cada
+     rendition pública. El tamaño del mosaico se calcula **relativo a la resolución de cada
+     rendition** — la lección del bug del `thumb` de la Fase 11 (el mosaico fijo no cabía en el
+     derivado chico) aplica igual aquí.
+   - **d. Renditions HLS** (con marca) — `ffmpeg ... -f hls -var_stream_map "..." ` para
+     360/540/720/1080 (solo las ≤ resolución del master), GOP de 2 s, segmentos de 4 s,
+     `-hls_playlist_type vod`. Salida: `master.m3u8` + `stream_N.m3u8` + `seg_*.ts`. Cada rendition
+     → una fila `media_variants` con label `hls-<altura>`; `hls_manifest_key = master.m3u8`.
+   - **e. Preview progresivo** (con marca) — un único MP4 720p `+faststart` → variant `preview`.
+     Es el `<source>` de respaldo para navegadores sin `hls.js` y para arrancar rápido.
+   - **f. Derechos** — `exiftool` sobre el master y el preview: copyright, autor, términos,
+     `WebStatement` (mismos campos que las fotos; en MP4 van como átomos QuickTime).
+   - **g. Fin** — `status` sigue en `draft`; el gestor publica cuando quiera. Si algo falla,
+     `processing_error` y el tile lo muestra.
+
+### 19.3 Entrega — transporte distinto para "ver" y para "comprar" (la parte innovadora)
+
+Es el mismo principio que la Fase 12c aplicó a las fotos (derivados públicos vs. original entregado
+una sola vez), llevado a vídeo:
+
+| Uso | Qué se sirve | Cómo | ¿Marca? |
+|---|---|---|---|
+| **Reproducir en la galería / lightbox** | HLS adaptativo (`master.m3u8` + `.ts`) + `preview.mp4` 720p de respaldo | El `GET /media/:key` que ya existe sirve `.m3u8` / `.ts` / `.mp4`; firma HMAC para álbumes no públicos; `Cross-Origin-Resource-Policy: cross-origin` como el resto de la media | **Sí** |
+| **Entrega bajo licencia** | El **master MP4 limpio** (un solo archivo, calidad alta, `+faststart`), con derechos + datos del licenciatario embebidos **al vuelo** | El mecanismo `delivery_tokens` de la Fase 12c **sin cambios**: un solo `GET /deliveries/:token`, se consume una vez. Un archivo único encaja con "un solo uso"; un stream HLS troceado no | **No** (es lo que se compró) |
+
+- **HLS para ver**, porque es el estándar de producción y se ve "pro" (el objetivo #1 del proyecto
+  es impresionar con ingeniería real). **Un archivo para comprar**, porque es lo que un licenciatario
+  realmente quiere y porque la semántica "una sola descarga" es limpia sobre un `GET` único e
+  imposible de razonar sobre decenas de peticiones de segmentos.
+- `consumeDelivery()` (Fase 12c) hoy hace `metadata.embed(buffer, …)` para foto. Se generaliza: si
+  `media.kind === 'video'`, corre `exiftool` sobre una **copia** del master para incrustar la nota
+  del licenciatario y lo sirve como stream. Mismo 404-para-todo, mismo *claim* atómico
+  (`updateMany` con `used_at: null`).
+
+### 19.4 Frontend
+
+- `hls.js` (desde `cdnjs`, ya en la lista de orígenes permitidos por el CSP) en el lightbox:
+  `if (Hls.isSupported())` → apunta al `.m3u8`; si no (Safari) → `<source src=".m3u8">` nativo;
+  respaldo final → `<source src="preview.mp4">`. `poster` = el WebP del póster.
+  `controlsList="nodownload"` y `disablePictureInPicture` como **disuasores** (no control real — se
+  documenta igual que los de las fotos).
+- `MediaGrid` (hoy `ImageGrid`): los tiles de video muestran el póster + un ▸ + la duración;
+  mientras el job corre, "procesando…" con el progreso.
+- `GalleryView` / `Lightbox`: rama por `kind`.
+- Hero de portada en video: `<video autoplay muted loop playsinline>` con el póster de respaldo y
+  **respeto a `prefers-reduced-motion`** (si el visitante pidió menos movimiento → póster estático,
+  sin autoplay).
+- El `LicenseRequestForm` del lightbox (Fase 12d) se muestra igual debajo del `<video>` — no cambia.
+
+### 19.5 Límites y seguridad nueva
+
+| Riesgo | Mitigación |
+|---|---|
+| Bomba de descompresión / archivo minúsculo que expande a horas de vídeo | `ffprobe` antes de nada; límites duros de duración, resolución, bytes y frame rate; `-threads` acotado y `timeout` de proceso en el transcode |
+| El transcode satura la CPU (DoS por subida) | Job en segundo plano con **cola de concurrencia 1**; el rate limit de subida ya existe (`UPLOAD_MAX_UPLOADS_PER_HOUR`); `VIDEO_MAX_CONCURRENT_TRANSCODES` |
+| `ffmpeg` como superficie de ataque (CVEs de demuxers) | Versión fija en el Dockerfile; `-nostdin`; **`-protocol_whitelist file,crypto`** (ffmpeg no abre `http(s)` → sin SSRF vía playlists); corre como el usuario no-root de los contenedores; input siempre por array de args, nunca shell |
+| Un vídeo = cientos de archivos (`.ts`) en el almacenamiento | El `StorageService` ya lo abstrae; `DiskStorageDriver` sin problema; con `CloudinaryStorageDriver` cada segmento es una subida — se **documenta el costo**, no se simula (mismo criterio que el límite de `read()` en la Fase 11) |
+| Filtración del master tras la venta | La nota del licenciatario embebida (nombre, correo, licencia) da trazabilidad — igual que en fotos |
+| `hls.js` desde CDN | Ya cubierto por el CSP `script-src` con `cdnjs`; se fija la versión |
+
+`PRUEBAS_SEGURIDAD.md` sumará un bloque **V1–Vn** (validación `ffprobe`, límites, whitelist de
+protocolos de ffmpeg, RBAC de la subida de video, marca presente en todas las renditions públicas,
+master fuera del público, entrega de un solo uso del master, `prefers-reduced-motion` en el hero).
+
+### 19.6 Sub-fases (de menor a mayor riesgo, como la Fase 12)
+
+- **14a — Refactor `images` → `media`.** Migración + backfill + ajustar backend, `seed-portfolio.ts`
+  y frontend a `media_id`. **Sin** añadir vídeo todavía (todo sigue `kind=photo`). Toda la suite en
+  verde y `next build` OK antes de seguir. Es el refactor puro, aislado.
+- **14b — Pipeline básico.** `VideoPipelineService`: validación `ffprobe` + master limpio + póster +
+  preview MP4. Subir un MP4 y reproducirlo en el lightbox (sin HLS, sin marca).
+- **14c — Protección.** Marca de agua en las renditions + renditions HLS + `hls.js` en el frontend.
+- **14d — Venta y pulido.** Generalizar `consumeDelivery()` para vídeo, hero de portada en vídeo,
+  `prefers-reduced-motion`, bloque de pruebas de seguridad.
+
+Sin servicios de pago nuevos. Dependencias: `ffmpeg` (Dockerfiles), `hls.js` (frontend, CDN ya
+permitido). Encaja después de la Fase 13 o antes — no depende de Stripe.
