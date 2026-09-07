@@ -53,6 +53,7 @@ export function GalleryImage({
   const [loaded, setLoaded] = useState(false);
   const { src, srcSet } = buildSrcSet(media.urls);
   const ratio = media.width / media.height;
+  const isVideo = media.kind === 'video';
 
   return (
     <figure
@@ -88,9 +89,27 @@ export function GalleryImage({
         onDragStart={(event) => event.preventDefault()}
         onContextMenu={(event) => event.preventDefault()}
       />
+      {isVideo ? (
+        <span className="g-video-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" focusable="false">
+            <path d="M8 5v14l11-7z" fill="currentColor" />
+          </svg>
+          {media.durationMs ? (
+            <time className="g-video-dur">{formatDuration(media.durationMs)}</time>
+          ) : null}
+        </span>
+      ) : null}
       {media.caption ? (
         <figcaption className="g-caption">{media.caption}</figcaption>
       ) : null}
     </figure>
   );
+}
+
+/** `95000` → `"1:35"`. */
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }

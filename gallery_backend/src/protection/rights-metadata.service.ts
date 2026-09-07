@@ -18,7 +18,7 @@ export interface RightsFields {
 }
 
 /** Formatos de salida sobre los que se embebe metadato. */
-export type EmbeddableFormat = 'jpeg' | 'png' | 'webp';
+export type EmbeddableFormat = 'jpeg' | 'png' | 'webp' | 'mp4';
 
 /**
  * Incrusta el registro de derechos como metadatos **IPTC/XMP** reales en el
@@ -80,6 +80,37 @@ export class RightsMetadataService {
   }
 
   /**
+   * Incrusta los derechos **directamente sobre un archivo en disco**, sin
+   * bufferizarlo — para el video (Fase 14), donde el master puede pesar
+   * cientos de MB. Mismo criterio que `embed`: lista fija de etiquetas, el
+   * valor es el único dato del usuario, y un fallo de `exiftool` no interrumpe
+   * nada (se registra y se sigue).
+   *
+   * @param path - Ruta del archivo (se sobrescribe en el sitio).
+   * @param format - Su formato real (decide qué etiquetas aplican).
+   * @param rights - Los campos ya resueltos.
+   */
+  async embedInPlace(
+    path: string,
+    format: EmbeddableFormat,
+    rights: RightsFields,
+  ): Promise<void> {
+    const args = this.buildArgs(format, rights);
+    if (args.length === 0) return;
+    try {
+      await execFileAsync(
+        'exiftool',
+        ['-m', '-q', '-P', '-overwrite_original', ...args, path],
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron incrustar los metadatos de derechos (en sitio): ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Construye la lista de argumentos `-ETIQUETA=valor` de `exiftool`. Cada
    * etiqueta viene de una lista fija en el código; el valor es el único dato
    * del usuario, ya saneado (sin saltos de línea ni caracteres de control).
@@ -91,7 +122,7 @@ export class RightsMetadataService {
       if (clean) args.push(`-${tag}=${clean}`);
     };
 
-    // XMP — universal (JPEG, PNG, WebP).
+    // XMP — universal (JPEG, PNG, WebP, y también MP4/QuickTime).
     set('XMP-dc:Rights', rights.rightsStatement);
     set('XMP-dc:Creator', rights.creator);
     set('XMP-photoshop:Credit', rights.creditLine);
@@ -99,13 +130,18 @@ export class RightsMetadataService {
     set('XMP-xmpRights:WebStatement', rights.licensorUrl);
     set('XMP-plus:LicensorURL', rights.licensorUrl);
 
-    // Genéricas — exiftool las enruta al contenedor correcto según el formato.
-    set('Copyright', rights.rightsStatement);
-    set('Artist', rights.creator);
-
-    // IPTC solo tiene sentido en JPEG (el contenedor no existe en PNG/WebP).
-    if (format === 'jpeg') {
-      set('IPTC:CopyrightNotice', rights.rightsStatement);
+    if (format === 'mp4') {
+      // Contenedor QuickTime: la lista de ítems del usuario (`©cpy`, `©ART`).
+      set('QuickTime:Copyright', rights.rightsStatement);
+      set('QuickTime:Artist', rights.creator);
+    } else {
+      // Genéricas — exiftool las enruta al contenedor correcto según el formato.
+      set('Copyright', rights.rightsStatement);
+      set('Artist', rights.creator);
+      // IPTC solo tiene sentido en JPEG (el contenedor no existe en PNG/WebP).
+      if (format === 'jpeg') {
+        set('IPTC:CopyrightNotice', rights.rightsStatement);
+      }
     }
 
     return args;

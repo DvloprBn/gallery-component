@@ -18,6 +18,7 @@ const CONTENT_TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
   png: 'image/png',
   avif: 'image/avif',
+  mp4: 'video/mp4',
 };
 
 /**
@@ -101,7 +102,7 @@ export class DiskStorageDriver implements StorageDriver {
    * un `../` o una barra nunca llegan al sistema de archivos (path traversal).
    */
   private pathFor(key: string): string {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z]{3,4}$/.test(key)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{3,4}$/.test(key)) {
       throw new Error('Clave de almacenamiento inválida.');
     }
     return join(this.root, key);

@@ -47,11 +47,18 @@ export type GalleryTheme = z.infer<typeof themeSchema>;
 /** Un elemento de la galería (foto o video), tal como lo devuelve `GET /g/:slug`. */
 export const galleryMediaSchema = z.object({
   mediaId: z.string(),
+  kind: z.enum(['photo', 'video']).catch('photo'),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
+  /** Solo video: duración en milisegundos (para el badge de la miniatura). */
+  durationMs: z.number().int().nonnegative().nullable().catch(null),
   placeholder: z.string().nullable(),
   altText: z.string().nullable(),
   caption: z.string().nullable(),
+  /**
+   * Foto: `thumb`/`small`/`medium`/`large`. Video: esos (el póster) más
+   * `preview` (MP4 progresivo 720p) — el HLS llega en la Fase 14c.
+   */
   urls: z.record(z.string(), z.string().url()),
 });
 

@@ -38,9 +38,10 @@ FROM node:22-bookworm-slim AS runtime
 # openssl -> motor de Prisma en runtime.
 # fontconfig + fuente -> rasterizado de texto SVG (seed de demo + marca de agua).
 # libimage-exiftool-perl -> embebe IPTC/XMP de derechos (Fase 11).
+# ffmpeg (con ffprobe) -> validación, re-encode, póster y preview de video (Fase 14).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       openssl ca-certificates fontconfig fonts-dejavu-core libimage-exiftool-perl \
+       openssl ca-certificates fontconfig fonts-dejavu-core libimage-exiftool-perl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

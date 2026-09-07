@@ -45,6 +45,7 @@ export interface MediaRights {
 export interface MediaDto {
   mediaId: string;
   albumId: string;
+  kind: 'photo' | 'video';
   originalName: string | null;
   mimeType: string;
   width: number;
@@ -56,10 +57,23 @@ export interface MediaDto {
   sortOrder: number;
   /** Curación: solo las `published` se ven en la galería pública. */
   status: MediaStatus;
-  /** Override de derechos de esta imagen (vacío = hereda todo del sitio). */
+  /** Override de derechos de este elemento (vacío = hereda todo del sitio). */
   rights: MediaRights;
   createdAt: string;
+  /** Solo video: duración en ms (para mostrar la longitud). */
+  durationMs: number | null;
+  /** Solo video: `true` mientras el transcode en segundo plano no ha terminado. */
+  processing: boolean;
+  /** Solo video: mensaje si el transcode falló (el elemento queda sin URLs). */
+  processingError: string | null;
   urls: Record<string, string>;
+}
+
+/** Estado del transcode de un video — lo devuelve `GET /media/:id/processing`. */
+export interface ProcessingState {
+  state: 'processing' | 'done' | 'error';
+  step: string;
+  error?: string;
 }
 
 /** Enlace de compartir (sin el token en claro). */

@@ -103,15 +103,29 @@ export function Lightbox({
         ‹
       </button>
       <figure className="g-lightbox-frame" onClick={(event) => event.stopPropagation()}>
-        <img
-          key={current.mediaId}
-          className="g-lightbox-img"
-          src={current.urls.large ?? current.urls.medium ?? current.urls.original}
-          alt={current.altText ?? ''}
-          draggable={false}
-          onDragStart={(event) => event.preventDefault()}
-          onContextMenu={(event) => event.preventDefault()}
-        />
+        {current.kind === 'video' ? (
+          <video
+            key={current.mediaId}
+            className="g-lightbox-img"
+            src={current.urls.preview}
+            poster={current.urls.large ?? current.urls.medium}
+            controls
+            playsInline
+            preload="metadata"
+            controlsList="nodownload"
+            onContextMenu={(event) => event.preventDefault()}
+          />
+        ) : (
+          <img
+            key={current.mediaId}
+            className="g-lightbox-img"
+            src={current.urls.large ?? current.urls.medium ?? current.urls.original}
+            alt={current.altText ?? ''}
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
+            onContextMenu={(event) => event.preventDefault()}
+          />
+        )}
         {current.caption ? (
           <figcaption className="g-lightbox-caption">{current.caption}</figcaption>
         ) : null}

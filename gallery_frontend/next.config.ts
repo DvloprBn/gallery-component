@@ -35,6 +35,9 @@ function contentSecurityPolicy(): string {
     "object-src 'none'",
     "form-action 'self'",
     `img-src 'self' data: blob: https://res.cloudinary.com ${api}`.trim(),
+    // El <video> del lightbox carga el preview desde el mismo origen que la API
+    // (en dev, otro puerto; en prod, `/api` del mismo host) o desde Cloudinary.
+    `media-src 'self' blob: https://res.cloudinary.com ${api}`.trim(),
     "font-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     `script-src 'self' 'unsafe-inline'${dev}`,

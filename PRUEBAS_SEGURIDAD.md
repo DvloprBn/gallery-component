@@ -13,12 +13,12 @@
 > pieza construida (`PLAN_DESARROLLO.md` §10, fase 7), nunca todo al final.
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
-10b (curación), 11 (protección: marca de agua + derechos) y 12 completa —12a–12d— (licenciamiento:
-solicitud pública, cotizar, emitir + entrega de un solo uso, botón público del lightbox) verificadas.**
-Verificados con `curl` / scripts contra el backend en vivo los puntos de OWASP API Top 10 que
-aplican, el bloque de **seguridad de archivos** (F1–F19, incluida una corrección real en F19), el
-de identidad de sitio/contacto (S1–S13), el de protección (P1–P8) y el de licenciamiento (L1–L17 —
-ver más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
+10b (curación), 11 (protección: marca de agua + derechos), 12 completa —12a–12d— (licenciamiento) y
+14a–14b (video: modelo + pipeline `ffmpeg`) verificadas.** Verificados con `curl` / scripts contra
+el backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de **seguridad de
+archivos** (F1–F19, incluida una corrección real en F19), el de identidad de sitio/contacto
+(S1–S13), el de protección (P1–P8), el de licenciamiento (L1–L17) y el de **video** (V1–V10 — ver
+más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
 volumen/espera reales.
 
 ### OWASP API Security Top 10 — cobertura tras la Fase 11
@@ -198,6 +198,26 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L15 | Entrega — token inventado / caducado / ya usado | los tres casos devuelven el mismo 404 (indistinguibles, mismo principio que las URLs firmadas de `/media/:key`); nunca se toca el almacenamiento si el token no pasa la validación | ✅ Probado 2026-09-04 |
 | L16 | Entrega — el archivo servido | `Content-Disposition: attachment`; es el **original** limpio de resolución completa (no un derivado); lleva los metadatos de derechos **más una nota de a quién se licenció**, incrustada al vuelo solo para esa descarga (trazabilidad si el archivo se filtra después) | ✅ Probado 2026-09-04 (descarga real ≈500 KB) |
 | L17 | Botón público "Solicitar licencia" del lightbox (Fase 12d) | Es solo frontend — llama a `POST /license-requests` con el mismo `mediaId`/cuerpo que ya cubren L1–L5; no abre superficie nueva. Verificado que el cuerpo exacto que arma `LicenseRequestForm` (incluido `website` vacío) pasa por las mismas reglas: `mediaId` de una foto real → 202 y llega a la bandeja; `website` relleno → 202 pero **nunca** llega a la bandeja (mismo honeypot que L3) | ✅ Probado 2026-09-04 (`verify-12d.mjs`, 12/12 checks) |
+
+---
+
+## Bloque específico — Video (`POST /albums/:id/media`, transcode — Fase 14b)
+
+Mismo principio que el bloque de imagen: **el archivo del cliente nunca se sirve tal cual** y la
+validación es por contenido, no por extensión ni `Content-Type`. Aquí la autoridad es `ffprobe`.
+
+| # | Prueba | Qué valida | Estado |
+|---|---|---|---|
+| V1 | Un no-video con nombre `.mp4` (o `Content-Type: video/mp4`) | `ffprobe` no lo reconoce como contenedor válido → **400**. La pista (`mimetype`/extensión) solo elige la rama; no es la autoridad | ✅ Probado 2026-09-07 (`verify-14b.mjs`) |
+| V2 | Límites de entrada | duración > `VIDEO_MAX_DURATION_S` (120 s); resolución > `VIDEO_MAX_PIXELS` (1920×1080); tamaño > `VIDEO_MAX_INPUT_BYTES` (200 MiB); frame rate > `VIDEO_MAX_FRAME_RATE` (121); más de una pista de video o de audio → **400**, antes de tocar `ffmpeg` | ✅ Cubierto (`probe()`); tamaño probado en el spec |
+| V3 | Bufferizado en memoria | la subida va a `diskStorage` (archivo temporal), no a memoria — un video de 200 MiB no puede tumbar el proceso por RAM. La rama de imagen sí lee a buffer, pero solo tras comprobar `size ≤ UPLOAD_MAX_FILE_BYTES` | ✅ Revisado en código |
+| V4 | `ffmpeg`/`ffprobe` como superficie | siempre `execFile` + **array** de argumentos (nunca shell, nunca interpolando el nombre/datos del usuario); `-protocol_whitelist file,crypto` → no abre `http(s)`/`tcp` (sin SSRF vía playlists); versión fija en el Dockerfile; timeout por proceso (`VIDEO_TRANSCODE_TIMEOUT_MS`) | ✅ Revisado en código |
+| V5 | DoS por transcode | cola de **concurrencia 1** (no se apilan N `ffmpeg` a la vez); el rate limit de subidas por hora (`UPLOAD_MAX_UPLOADS_PER_HOUR`) también aplica | ✅ Revisado en código |
+| V6 | El master limpio nunca es público | `-map_metadata -1` (tira todo metadato); `media.storage_key` (el master) **no** aparece en `urls` de `GET /g/:slug` — solo `preview` + el póster. `urls.original` solo en la vista del Studio (dueño/admin) | ✅ Probado 2026-09-07 (`verify-14b.mjs`: `preview` sí, `original` no) |
+| V7 | Derechos en el archivo servido (invariante D10) | el preview y el master llevan `exiftool` con las etiquetas de derechos (XMP `dc:Rights`/`dc:Creator`, `Copyright`, `Artist`, `UsageTerms`, `WebStatement`, `LicensorURL`) — igual que cualquier derivado de foto | ✅ Probado 2026-09-07 (`exiftool` sobre el preview descargado) |
+| V8 | `GET /media/:id/processing` | `admin`+ y **valida propiedad del álbum** (`loadManageable`); sin sesión → 401, `usuario` → 403 | ✅ Cubierto (mismo `loadManageable` que `PATCH /media/:id`, probado en L-equivalentes) |
+| V9 | Fallo de transcode | error de `ffmpeg` → `media.processing_error` (el gestor lo ve), objetos ya subidos se limpian, el video **no** se publica; nunca tumba el proceso. Reinicio a mitad → `processing` reporta `interrumpido` | ✅ Revisado en código |
+| V10 | `GET /media/:key` de un `.mp4` | `DiskStorageDriver` valida la clave con `^<uuid>\.[a-z0-9]{3,4}$` (un `../` o barra nunca llega al FS — path traversal); sirve con `Content-Type: video/mp4`; privado exige la firma HMAC igual que una imagen | ✅ Revisado en código (regex corregida en 14b) |
 
 ---
 

@@ -31,7 +31,8 @@ describe('ImagesService.setStatusBulk', () => {
     service = new ImagesService(
       prisma as unknown as PrismaService,
       {} as never, // storage
-      {} as never, // pipeline
+      {} as never, // pipeline (imagen)
+      {} as never, // video (pipeline de video)
       {} as never, // redis
       albums as unknown as AlbumsService,
       {} as never, // watermark

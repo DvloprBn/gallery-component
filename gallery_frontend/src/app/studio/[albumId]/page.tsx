@@ -17,6 +17,7 @@ import {
   type MediaDto,
   type MediaRights,
   type MediaStatus,
+  type ProcessingState,
   type ShareTokenRow,
 } from '@/lib/studio-types';
 
@@ -163,11 +164,15 @@ function Uploader({ albumId, onDone }: { albumId: string; onDone: () => Promise<
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/avif"
+        accept="image/jpeg,image/png,image/webp,image/avif,video/mp4,video/quicktime,video/webm,video/x-matroska"
         multiple
         disabled={busy}
         onChange={(e) => void onFiles(e.target.files)}
       />
+      <p className="hint">
+        Fotos (JPEG/PNG/WebP/AVIF) o video (MP4/MOV/WebM). El video se procesa en
+        segundo plano tras subirlo.
+      </p>
       {rows.length > 0 && (
         <ul className="upload-status">
           {rows.map((r, i) => (
@@ -209,6 +214,27 @@ function MediaGrid({
     setOrder(media);
     setSelected(new Set());
   }, [media]);
+
+  // Mientras haya un video transcodificándose, se consulta su estado cada 4 s;
+  // al terminar (o fallar) se recarga la lista para traer sus URLs / el error.
+  const anyProcessing = order.some((m) => m.processing);
+  useEffect(() => {
+    if (!anyProcessing) return;
+    const timer = setInterval(async () => {
+      const pending = order.filter((m) => m.processing);
+      const states = await Promise.all(
+        pending.map((m) =>
+          apiFetch<ProcessingState>(`/media/${m.mediaId}/processing`).catch(
+            () => ({ state: 'processing' as const, step: '' }),
+          ),
+        ),
+      );
+      if (states.some((s) => s.state !== 'processing')) {
+        await onChange();
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [anyProcessing, order, onChange]);
 
   const counts = order.reduce(
     (acc, i) => ({ ...acc, [i.status]: (acc[i.status] ?? 0) + 1 }),
@@ -355,8 +381,28 @@ function MediaGrid({
                 onChange={() => toggleSel(image.mediaId)}
               />
             </label>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.urls.thumb ?? image.urls.small} alt={image.altText ?? ''} />
+            <div className="img-card__media">
+              {image.processing ? (
+                <div className="img-card__note">Procesando video…</div>
+              ) : image.processingError ? (
+                <div className="img-card__note img-card__note--error">
+                  Error al procesar: {image.processingError}
+                </div>
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image.urls.thumb ?? image.urls.small}
+                    alt={image.altText ?? ''}
+                  />
+                  {image.kind === 'video' ? (
+                    <span className="img-card__video" aria-hidden="true">
+                      ▶
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </div>
             <select
               className="img-meta"
               value={image.status}

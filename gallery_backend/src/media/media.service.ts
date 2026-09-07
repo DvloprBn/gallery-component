@@ -8,14 +8,21 @@ import type {
 import { sha256Hex } from '../common/utils/token.util';
 import { verifyMediaSignature } from '../storage/media-signing';
 
-/** Una imagen tal como la consume la galería pública. */
+/** Un elemento (foto o video) tal como lo consume la galería pública. */
 export interface PublicMedia {
   mediaId: string;
+  kind: 'photo' | 'video';
   width: number;
   height: number;
+  /** Solo video: duración en milisegundos (para el badge de la miniatura). */
+  durationMs: number | null;
   placeholder: string | null;
   altText: string | null;
   caption: string | null;
+  /**
+   * Foto: `thumb`/`small`/`medium`/`large` (WebP). Video: esos mismos (el
+   * póster) más `preview` (MP4 progresivo 720p) — el HLS llega en la Fase 14c.
+   */
   urls: Record<string, string>;
 }
 
@@ -95,10 +102,10 @@ export class MediaService {
         let coverUrl: string | null = null;
         if (cover) {
           const small = cover.variants.find((v) => v.label === 'small');
-          coverUrl = this.storage.urlFor(
-            (small ?? cover).storage_key,
-            'public',
-          );
+          // Preferimos el derivado `small`; si no hay (p. ej. un video cuya
+          // portada aún no está lista) caemos al original — que puede ser null.
+          const key = small?.storage_key ?? cover.storage_key;
+          coverUrl = key ? this.storage.urlFor(key, 'public') : null;
         }
 
         return {
@@ -159,20 +166,20 @@ export class MediaService {
       },
       media: rows.map((m) => ({
         mediaId: m.media_id,
+        kind: m.kind,
         width: m.width,
         height: m.height,
+        durationMs: m.duration_ms ?? null,
         placeholder: m.placeholder,
         altText: m.alt_text,
         caption: m.caption,
         urls: {
-          // El original de alta resolución (limpio, sin marca de agua — D9)
-          // NUNCA se ofrece en una galería `public`/`unlisted`: sería
-          // regalar exactamente lo que la Fase 12 vende con licencia. Un
-          // álbum `private` sigue incluyéndolo — un enlace de compartir
-          // implica que el dueño ya confió el original a ese visitante
-          // concreto, es un nivel de confianza distinto al de un enlace
-          // público/no listado que cualquiera puede encontrar.
-          ...(visibility === 'private'
+          // El original/master de alta resolución (limpio, sin marca — D9)
+          // NUNCA se ofrece en una galería `public`/`unlisted`: sería regalar
+          // exactamente lo que la Fase 12 vende con licencia. Un álbum
+          // `private` sigue incluyéndolo — un enlace de compartir implica que
+          // el dueño ya confió el original a ese visitante concreto.
+          ...(visibility === 'private' && m.storage_key
             ? { original: this.storage.urlFor(m.storage_key, visibility) }
             : {}),
           ...Object.fromEntries(

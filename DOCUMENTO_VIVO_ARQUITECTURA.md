@@ -1915,3 +1915,97 @@ riesgo de migración a cambio de nada. Se anota como posible pulido posterior.
 `seed-portfolio.ts`, `seed-demo.ts` y `probe-fase10.mjs` quedaron ajustados a las rutas/campos
 nuevos. El seed del portafolio lo vuelve a correr el dueño desde el host cuando quiera (es
 convergente); la BD de desarrollo ya está migrada con sus 244 fotos intactas.
+
+## 21. Fase 14b — Pipeline de video: ingesta, transcode y reproducción (completada y verificada, 2026-09-07)
+
+Segundo tramo de la Fase 14: subir un video de verdad, procesarlo en segundo plano y reproducirlo
+en el lightbox. **Sin** marca de agua ni HLS todavía (eso es 14c); sí con validación por contenido,
+master limpio y derechos incrustados desde el primer día.
+
+### 21.1 Dependencia y modelo
+
+- **`ffmpeg`** (trae `ffprobe`) en `Dockerfile` y `Dockerfile.dev` — invocado siempre con
+  `execFile` + array de argumentos (nunca shell), y con `-protocol_whitelist file,crypto` para que
+  no abra `http(s)` (corta SSRF vía playlists). `ffprobe` **no** acepta `-nostdin` (es flag de
+  `ffmpeg`): hay dos listas de flags base separadas.
+- Migración `20260907120000_media_video_columns` (aditiva): `media` gana `duration_ms`,
+  `frame_rate`, `video_codec`, `audio_codec`, `has_audio`, `hls_manifest_key` (null hasta 14c),
+  `poster_key`, `processing_error`. Y **`storage_key` pasa a anulable**: un video tiene fila desde
+  que se sube, pero su master (la copia limpia) no existe hasta que el transcode termina. Se
+  guardaron los sitios que asumían `storage_key` no nulo (`toDto`, `getGallery`, la regeneración de
+  marca —que ahora filtra `kind: 'photo'`—, el borrado de álbum, `consumeDelivery`).
+
+### 21.2 Ingesta (`VideoPipelineService` + `ImagesService.uploadVideo`)
+
+- El interceptor de subida pasa a **`diskStorage`** (a un archivo temporal, no a memoria): un
+  video puede pesar cientos de MB. La rama de imagen lee ese temporal a un buffer solo tras
+  comprobar `size ≤ UPLOAD_MAX_FILE_BYTES`; la de video se lo pasa a `ffprobe` por ruta.
+- `POST /albums/:id/media` detecta la rama por una **pista** (`mimetype` empieza por `video/` o la
+  extensión) — pero la autoridad es `ffprobe` / `sharp`, no la pista.
+- `VideoPipelineService.probe()` rechaza (400): contenedor fuera de MP4/MOV/WebM/MKV; sin stream de
+  video; más de un stream de video o de audio; duración > `VIDEO_MAX_DURATION_S` (120 s);
+  resolución > `VIDEO_MAX_PIXELS` (1920×1080); tamaño > `VIDEO_MAX_INPUT_BYTES` (200 MiB); frame
+  rate imposible (> `VIDEO_MAX_FRAME_RATE`).
+- Si pasa: se copia el original al directorio de trabajo del job, se crea la fila `media`
+  (`kind=video`, `status=draft`, `storage_key=null`, dimensiones y códecs del probe,
+  `checksum_sha256` del archivo subido) y se **encola** el transcode. Respuesta inmediata (201 con
+  `processing: true`).
+
+### 21.3 Transcode en segundo plano (`ImagesService.runVideoTranscode`)
+
+Cola con **concurrencia 1** (`ffmpeg` satura la CPU) — cada subida encadena su trabajo al final de
+una promesa. Progreso en un `Map` en memoria del proceso (nunca Redis, mismo criterio que la
+regeneración de marca, Fase 11). Pasos:
+
+1. **Master limpio** — `ffmpeg -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -movflags
+   +faststart -map_metadata -1`. `-map_metadata -1` tira TODO metadato (el equivalente a que
+   `sharp` quite el EXIF). Es la copia de alta calidad: **nunca pública**, solo entrega bajo
+   licencia (Fase 14d ya funciona — `consumeDelivery` reconoce `kind='video'` y embebe al
+   licenciatario con `format: 'mp4'`).
+2. **Portada** — un fotograma al 10 % de la duración → PNG → pasa por el `ImagePipelineService`
+   existente (4 derivados WebP + BlurHash). El `large` es el `poster_key`.
+3. **Preview** — un único MP4 ≤720p con `+faststart` (`label: 'preview'`, `format: 'mp4'`) — lo que
+   se reproduce en el lightbox mientras no haya HLS.
+4. **Derechos** — `RightsMetadataService.embedInPlace()` (nuevo: `exiftool` directo sobre el
+   archivo, sin bufferizarlo) sobre el master y el preview (`EmbeddableFormat` gana `'mp4'` →
+   etiquetas XMP + QuickTime). Los derivados WebP del póster llevan los derechos igual que
+   cualquier derivado de foto. **La marca de agua sobre el video llega en la 14c.**
+5. Se sube todo, se rellena la fila (`storage_key`, `poster_key`, `placeholder`, `variants`) y el
+   estado del job pasa a `done`. Si algo falla: `media.processing_error`, se limpian los objetos ya
+   subidos, el video queda sin publicar (el gestor ve el error). Un reinicio a mitad de transcode
+   deja el video sin `storage_key` ni error → `GET /media/:id/processing` lo reporta como
+   `interrumpido`.
+
+### 21.4 Entrega y frontend
+
+- `GET /g/:slug` y la vista del Studio añaden `kind` (y `durationMs`) a cada elemento; para un
+  video, `urls` trae los WebP del póster + `preview` (MP4). El master (`urls.original`) **solo**
+  aparece en la vista del Studio (dueño/admin), nunca en la galería pública — igual que el original
+  de una foto.
+- `GET /media/:id/processing` (`admin`+, valida propiedad): `processing` / `done` / `error`.
+- `DiskStorageDriver`: la validación de clave admitía solo `[a-z]{3,4}` de extensión → `mp4` (con
+  dígito) fallaba con "clave inválida"; ahora `[a-z0-9]{3,4}`. `CONTENT_TYPES` gana `mp4 →
+  video/mp4`.
+- `next.config.ts`: la CSP gana `media-src 'self' blob: <api> https://res.cloudinary.com` — sin
+  eso el `<video>` no carga el preview.
+- Frontend: `Lightbox` pinta un `<video controls playsInline preload="metadata"
+  controlsList="nodownload">` cuando `kind==='video'`; `GalleryImage` añade un distintivo ▶ + la
+  duración sobre la miniatura; el `Uploader` del Studio acepta video y la rejilla muestra
+  "Procesando video…" y **sondea** `GET /media/:id/processing` cada 4 s hasta que termina.
+
+### 21.5 Verificación
+
+- `tsc` back + front limpios. **107 tests / 16 suites** — nuevo `video-pipeline.service.spec.ts`
+  (6 tests, `ffmpeg`/`ffprobe`/`exiftool` reales: genera un MP4 diminuto, comprueba `probe()`,
+  rechazo de no-video y de exceso de tamaño, master sin metadatos, PNG de portada, preview ≤720p).
+- `next build` producción (`NODE_ENV=production`) OK, 16 rutas.
+- **`verify-14b.mjs`** contra el backend en vivo — **13/13**: un PNG con nombre `.mp4` → 400;
+  subida de video real → 201 con `kind=video`, `processing=true`, `durationMs` del probe, sin
+  `urls.preview` todavía; se sondea `GET /media/:id/processing` hasta `done`; la bandeja del álbum
+  ya trae `urls.preview` (MP4) + `urls.large` (póster WebP) + `placeholder`; al publicar,
+  `GET /g/:slug` lo trae con `kind=video`, `urls.preview` presente y **`urls.original` ausente**; el
+  preview descarga y empieza con un box `ftyp` de MP4; `DELETE /media/:id` → 204.
+- Comprobado aparte con `exiftool` sobre el preview servido: lleva `Copyright`, `Artist`,
+  XMP `dc:Rights`/`dc:Creator`, `Credit`, `UsageTerms`, `WebStatement`, `LicensorURL` — la
+  invariante D10 (todo archivo servido lleva los derechos) también se cumple en video.
+- `verify-14a.mjs` (rutas/campos `media`) y `probe-fase10.mjs` (24/24) siguen en verde.

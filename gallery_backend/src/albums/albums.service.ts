@@ -127,9 +127,15 @@ export class AlbumsService {
     });
 
     for (const media of rows) {
-      await this.storage.remove(media.storage_key);
-      for (const variant of media.variants) {
-        await this.storage.remove(variant.storage_key);
+      // `storage_key` puede ser null (video con transcode a medias);
+      // `poster_key`/`hls_manifest_key` solo existen en video.
+      for (const key of [
+        media.storage_key,
+        media.poster_key,
+        media.hls_manifest_key,
+        ...media.variants.map((v) => v.storage_key),
+      ]) {
+        if (key) await this.storage.remove(key);
       }
     }
     await this.prisma.albums.delete({ where: { album_id: album.album_id } });

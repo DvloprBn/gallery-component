@@ -172,7 +172,9 @@ model media {
   album_id        String     @db.Uuid
   owner_user_id   String     @db.Uuid
   kind            media_kind @default(photo)
-  storage_key     String     @unique
+  // Clave del original/master limpio. `null` solo durante la ventana en la que
+  // un video ya tiene fila pero su master aún se está transcodificando (Fase 14).
+  storage_key     String?    @unique
   original_name   String?    @db.VarChar(255) // saneado, solo para mostrar/descargar
   mime_type       String     @db.VarChar(50) // detectado por contenido, no por extensión
   width           Int
@@ -193,6 +195,18 @@ model media {
   // Es lo que se incrusta como IPTC/XMP en cada archivo servido.
   rights          Json?
   created_at      DateTime   @default(now()) @db.Timestamptz(6)
+
+  // ── Solo video (Fase 14). `null` para foto. ──
+  // El pipeline los rellena en segundo plano tras la subida; mientras
+  // `processing_error` es `null` y no hay `variants`, el transcode está en curso.
+  duration_ms      Int?
+  frame_rate       Decimal? @db.Decimal(6, 3)
+  video_codec      String?  @db.VarChar(16) // 'h264' | 'hevc' | 'vp9' | 'av1'
+  audio_codec      String?  @db.VarChar(16) // 'aac' | null si es mudo
+  has_audio        Boolean  @default(false)
+  hls_manifest_key String?  // ruta del `.m3u8` maestro; null hasta la Fase 14c
+  poster_key       String?  // frame extraído (WebP) — la portada del video
+  processing_error String?  @db.VarChar(500) // si el transcode falló, el gestor lo ve aquí
 
   album            albums             @relation(fields: [album_id], references: [album_id], onDelete: Cascade)
   owner            users              @relation(fields: [owner_user_id], references: [user_id], onDelete: Cascade)

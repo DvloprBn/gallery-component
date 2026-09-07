@@ -35,10 +35,10 @@ export interface PublicRights extends RightsFields {
   noticeText: string;
 }
 
-/** Lo que necesita `runRegeneration` de cada imagen — evita depender del tipo inferido de Prisma. */
+/** Lo que necesita `runRegeneration` de cada foto — evita depender del tipo inferido de Prisma. */
 interface RegenerableMedia {
   media_id: string;
-  storage_key: string;
+  storage_key: string | null;
   mime_type: string;
   rights: unknown;
   variants: { variant_id: string; label: string; storage_key: string }[];
@@ -297,7 +297,8 @@ export class SiteService {
     let rows: RegenerableMedia[] = [];
     try {
       rows = await this.prisma.media.findMany({
-        where: { album: { visibility: 'public' } },
+        // Solo fotos: la marca de agua sobre video llega en la Fase 14c.
+        where: { album: { visibility: 'public' }, kind: 'photo' },
         include: { variants: true },
       });
     } catch (error) {
@@ -316,6 +317,10 @@ export class SiteService {
 
     for (const media of rows) {
       try {
+        if (!media.storage_key) {
+          this.regenState.skipped++;
+          continue;
+        }
         // `storage.read` solo lo implementa el driver de disco — con
         // Cloudinary (producción) esta imagen se cuenta como "skipped": leer
         // de vuelta el original requeriría bajarlo por HTTPS de su CDN, que
@@ -485,7 +490,9 @@ export class SiteService {
           height: media.height,
           placeholder: media.placeholder,
           urls: {
-            original: this.storage.urlFor(media.storage_key, 'public'),
+            ...(media.storage_key
+              ? { original: this.storage.urlFor(media.storage_key, 'public') }
+              : {}),
             ...Object.fromEntries(
               media.variants.map((v) => [
                 v.label,

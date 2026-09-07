@@ -10,9 +10,13 @@ FROM node:22-bookworm-slim
 # libimage-exiftool-perl -> embebe los metadatos IPTC/XMP de derechos
 #   (Fase 11, D10). Se invoca siempre con `execFile` (nunca `exec`/shell) y
 #   una lista fija de etiquetas — ver `src/protection/rights-metadata.service.ts`.
+# ffmpeg (trae ffprobe) -> valida por contenido, re-encoda y saca póster/preview
+#   del video (Fase 14). Se invoca con `execFile` + array de argumentos, nunca
+#   shell, y con `-protocol_whitelist file,crypto` (sin red) — ver
+#   `src/media-processing/video-pipeline.service.ts`.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       openssl ca-certificates fontconfig fonts-dejavu-core libimage-exiftool-perl \
+       openssl ca-certificates fontconfig fonts-dejavu-core libimage-exiftool-perl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -8,13 +8,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AlbumsService } from '../albums/albums.service';
 import { ImagePipelineService } from '../media-processing/image-pipeline.service';
+import {
+  VideoPipelineService,
+  type VideoProbe,
+} from '../media-processing/video-pipeline.service';
 import type { EmbeddableFormat } from '../protection/rights-metadata.service';
 import { RightsMetadataService } from '../protection/rights-metadata.service';
+import type { RightsFields } from '../protection/rights-metadata.service';
 import { resolveRights, sanitizeRightsPartial } from '../protection/rights.util';
 import { WatermarkService } from '../protection/watermark.service';
 import { SiteService } from '../site/site.service';
@@ -27,13 +36,38 @@ import {
   UpdateMediaDto,
 } from './dto/media.dto';
 
-/** Un archivo subido (memory storage de multer). */
+/**
+ * Un archivo subido. Multer lo escribe a un archivo temporal en disco (no a
+ * memoria) — un video puede pesar cientos de MB y no tiene sentido bufferizarlo
+ * entero. `path` es esa ruta temporal; quien la consume la borra al terminar.
+ */
 export interface UploadedMediaFile {
-  buffer: Buffer;
+  path: string;
   mimetype: string;
   originalname: string;
   size: number;
 }
+
+/** Estado del transcode de un video en segundo plano (Fase 14b, en memoria del proceso). */
+export interface VideoJobState {
+  state: 'processing' | 'done' | 'error';
+  step: string;
+  error?: string;
+}
+
+/** Extensiones y MIME que delatan un video (solo una PISTA — `ffprobe` es la autoridad). */
+const VIDEO_HINT = /\.(mp4|m4v|mov|webm|mkv)$/i;
+
+/**
+ * Tope de tamaño para una IMAGEN (se lee entera a memoria). El interceptor de
+ * multer deja pasar archivos mucho más grandes para admitir video; aquí se
+ * corta antes de bufferizar una "imagen" gigante. `UPLOAD_MAX_FILE_BYTES` (por
+ * defecto 15 MiB) es el mismo valor que usa el interceptor para imágenes.
+ */
+const IMAGE_MAX_BYTES = Math.max(
+  100_000,
+  Number(process.env.UPLOAD_MAX_FILE_BYTES) || 15_728_640,
+);
 
 /**
  * Subidas por usuario y hora antes de responder 429. Configurable con
@@ -53,10 +87,27 @@ const MAX_UPLOADS_PER_HOUR = Math.max(
 export class ImagesService {
   private readonly logger = new Logger(ImagesService.name);
 
+  /**
+   * Estado de cada transcode de video en curso (Fase 14b). En memoria del
+   * proceso a propósito — nunca Redis (mismo criterio que la regeneración de
+   * marca de agua, Fase 11): si el proceso se reinicia, el gestor ve el video
+   * sin `storage_key` ni `processing_error` y `getProcessingState` lo reporta
+   * como interrumpido.
+   */
+  private readonly videoJobs = new Map<string, VideoJobState>();
+
+  /**
+   * Cola de transcodes con **concurrencia 1**: `ffmpeg` es intensivo en CPU y
+   * varios a la vez saturarían el contenedor. Cada subida encadena su trabajo
+   * al final de esta promesa.
+   */
+  private videoQueue: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly pipeline: ImagePipelineService,
+    private readonly video: VideoPipelineService,
     private readonly redis: RedisService,
     private readonly albums: AlbumsService,
     private readonly watermark: WatermarkService,
@@ -84,21 +135,45 @@ export class ImagesService {
     actor: AuthenticatedUser,
     file: UploadedMediaFile,
   ) {
-    const uploads = await this.redis.incrementWithTtl(
-      `ul:${actor.userId}`,
-      3600,
-    );
-    if (uploads > MAX_UPLOADS_PER_HOUR) {
-      throw new HttpException(
-        'Has subido demasiadas imágenes en la última hora.',
-        HttpStatus.TOO_MANY_REQUESTS,
+    try {
+      const uploads = await this.redis.incrementWithTtl(
+        `ul:${actor.userId}`,
+        3600,
       );
+      if (uploads > MAX_UPLOADS_PER_HOUR) {
+        throw new HttpException(
+          'Has subido demasiado contenido en la última hora.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      const album = await this.albums.getOwned(albumId, actor);
+      const visibility = album.visibility as MediaVisibility;
+
+      const looksLikeVideo =
+        file.mimetype.startsWith('video/') || VIDEO_HINT.test(file.originalname);
+
+      return looksLikeVideo
+        ? await this.uploadVideo(album, file, visibility)
+        : await this.uploadImage(album, file, visibility);
+    } finally {
+      // El camino de imagen ya leyó el temporal; el de video ya lo copió a su
+      // propio directorio de trabajo. En ambos casos este original se borra.
+      await rm(file.path, { force: true }).catch(() => undefined);
     }
+  }
 
-    const album = await this.albums.getOwned(albumId, actor);
-    const visibility = album.visibility as MediaVisibility;
-
-    const processed = await this.pipeline.process(file.buffer);
+  /** Sube una imagen: el flujo de siempre, leyendo el archivo temporal a memoria. */
+  private async uploadImage(
+    album: { album_id: string; owner_user_id: string; visibility: string; cover_media_id: string | null },
+    file: UploadedMediaFile,
+    visibility: MediaVisibility,
+  ) {
+    if (file.size > IMAGE_MAX_BYTES) {
+      throw new HttpException('La imagen supera el tamaño máximo.', HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+    const buffer = await readFile(file.path);
+    const processed = await this.pipeline.process(buffer);
 
     // Fase 11 — protección: se resuelve una vez por subida.
     // (1) Derechos: la imagen aún no existe, así que no tiene override propio
@@ -194,6 +269,259 @@ export class ImagesService {
       await Promise.all(storedKeys.map((key) => this.storage.remove(key)));
       throw error;
     }
+  }
+
+  /**
+   * Sube un video. Valida por contenido con `ffprobe`, crea la fila `media`
+   * (`kind=video`, `status=draft`, todavía **sin** `storage_key`) y encola el
+   * transcode en segundo plano — responde de inmediato. El master limpio, la
+   * portada y el preview los rellena `runVideoTranscode`.
+   *
+   * @throws BadRequestException si el archivo no es un video válido o supera
+   *         los límites (duración, resolución, tamaño, frame rate).
+   */
+  private async uploadVideo(
+    album: { album_id: string; owner_user_id: string; visibility: string; cover_media_id: string | null },
+    file: UploadedMediaFile,
+    visibility: MediaVisibility,
+  ) {
+    const probe = await this.video.probe(file.path, file.size);
+
+    // El original subido se copia al directorio de trabajo del job: la ruta
+    // temporal de multer se borra al volver de `upload()`.
+    const workDir = await mkdtemp(join(tmpdir(), 'gallery-video-'));
+    const srcPath = join(workDir, 'src');
+    await copyFile(file.path, srcPath);
+    const sourceChecksum = await this.hashFile(srcPath);
+
+    const nextSort = await this.prisma.media.count({
+      where: { album_id: album.album_id },
+    });
+
+    let created;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.media.create({
+          data: {
+            album_id: album.album_id,
+            owner_user_id: album.owner_user_id,
+            kind: 'video',
+            storage_key: null, // lo pone el job al terminar el master
+            original_name: this.sanitizeName(file.originalname),
+            mime_type: 'video/mp4', // el master siempre sale en MP4/H.264
+            width: probe.width,
+            height: probe.height,
+            bytes: file.size,
+            checksum_sha256: sourceChecksum,
+            sort_order: nextSort,
+            duration_ms: probe.durationMs,
+            frame_rate: probe.frameRate,
+            video_codec: probe.videoCodec,
+            audio_codec: probe.audioCodec,
+            has_audio: probe.hasAudio,
+          },
+          include: { variants: true },
+        });
+        await tx.albums.update({
+          where: { album_id: album.album_id },
+          data: {
+            media_count: { increment: 1 },
+            ...(album.cover_media_id ? {} : { cover_media_id: row.media_id }),
+          },
+        });
+        return row;
+      });
+    } catch (error) {
+      await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+
+    this.videoJobs.set(created.media_id, { state: 'processing', step: 'en cola' });
+    // Concurrencia 1: se encola al final de la promesa de la cola.
+    this.videoQueue = this.videoQueue.then(() =>
+      this.runVideoTranscode(created.media_id, workDir, srcPath, probe, visibility),
+    );
+
+    return this.toDto(created, created.variants, visibility);
+  }
+
+  /**
+   * Transcode de un video en segundo plano (fuera del ciclo de la petición):
+   * master limpio → portada → preview 720p → derechos incrustados → subida →
+   * se rellena la fila. Cualquier error se guarda en `media.processing_error`
+   * (el gestor lo ve) y el video queda sin publicar; nunca tumba el proceso.
+   */
+  private async runVideoTranscode(
+    mediaId: string,
+    workDir: string,
+    srcPath: string,
+    probe: VideoProbe,
+    visibility: MediaVisibility,
+  ): Promise<void> {
+    const setStep = (step: string) =>
+      this.videoJobs.set(mediaId, { state: 'processing', step });
+    const uploadedKeys: string[] = [];
+
+    try {
+      const masterPath = join(workDir, 'master.mp4');
+      const posterPng = join(workDir, 'poster.png');
+      const previewPath = join(workDir, 'preview.mp4');
+
+      setStep('transcodificando master');
+      await this.video.transcodeMaster(srcPath, masterPath, probe.hasAudio);
+
+      setStep('generando portada');
+      await this.video.extractPoster(
+        masterPath,
+        posterPng,
+        Math.round(probe.durationMs * 0.1),
+      );
+      const poster = await this.pipeline.process(await readFile(posterPng));
+
+      setStep('generando preview');
+      await this.video.buildPreview(masterPath, previewPath, probe.hasAudio);
+      const previewProbe = await this.video.probe(
+        previewPath,
+        (await readFile(previewPath)).byteLength,
+      );
+
+      setStep('incrustando derechos');
+      const rights: RightsFields = resolveRights(
+        await this.site.getRightsDefaults(),
+        null,
+      );
+      await this.metadata.embedInPlace(masterPath, 'mp4', rights);
+      await this.metadata.embedInPlace(previewPath, 'mp4', rights);
+      const masterBuf = await readFile(masterPath);
+      const previewBuf = await readFile(previewPath);
+
+      setStep('subiendo');
+      const master = await this.storage.put(masterBuf, {
+        extension: 'mp4',
+        contentType: 'video/mp4',
+        visibility,
+      });
+      uploadedKeys.push(master.key);
+      const preview = await this.storage.put(previewBuf, {
+        extension: 'mp4',
+        contentType: 'video/mp4',
+        visibility,
+      });
+      uploadedKeys.push(preview.key);
+
+      const variantRows: {
+        storage_key: string;
+        label: string;
+        format: string;
+        width: number;
+        height: number;
+        bytes: number;
+      }[] = [];
+      for (const variant of poster.variants) {
+        // El póster es público — lleva los derechos incrustados igual que
+        // cualquier derivado de foto (la marca de agua sobre el póster llega
+        // en la Fase 14c).
+        const withRights = await this.metadata.embed(variant.buffer, 'webp', rights);
+        const stored = await this.storage.put(withRights, {
+          extension: 'webp',
+          contentType: 'image/webp',
+          visibility,
+        });
+        uploadedKeys.push(stored.key);
+        variantRows.push({
+          storage_key: stored.key,
+          label: variant.label,
+          format: 'webp',
+          width: variant.width,
+          height: variant.height,
+          bytes: withRights.byteLength,
+        });
+      }
+      const large = variantRows.find((v) => v.label === 'large') ?? variantRows[variantRows.length - 1];
+      variantRows.push({
+        storage_key: preview.key,
+        label: 'preview',
+        format: 'mp4',
+        width: previewProbe.width,
+        height: previewProbe.height,
+        bytes: previewBuf.byteLength,
+      });
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.media_variants.deleteMany({ where: { media_id: mediaId } });
+        await tx.media.update({
+          where: { media_id: mediaId },
+          data: {
+            storage_key: master.key,
+            bytes: masterBuf.byteLength,
+            checksum_sha256: createHash('sha256').update(masterBuf).digest('hex'),
+            placeholder: poster.placeholder || null,
+            poster_key: large?.storage_key ?? null,
+            processing_error: null,
+            variants: { create: variantRows },
+          },
+        });
+      });
+
+      this.videoJobs.set(mediaId, { state: 'done', step: 'listo' });
+      setTimeout(() => this.videoJobs.delete(mediaId), 60_000).unref();
+    } catch (error) {
+      const message = (error as Error).message ?? 'error desconocido';
+      this.logger.warn(`Transcode de video ${mediaId} falló: ${message}`);
+      await Promise.all(uploadedKeys.map((key) => this.storage.remove(key))).catch(
+        () => undefined,
+      );
+      await this.prisma.media
+        .update({
+          where: { media_id: mediaId },
+          data: { processing_error: message.slice(0, 500) },
+        })
+        .catch(() => undefined);
+      this.videoJobs.set(mediaId, { state: 'error', step: 'error', error: message });
+      setTimeout(() => this.videoJobs.delete(mediaId), 300_000).unref();
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Estado del transcode de un video (para que el Studio muestre "procesando…"
+   * y refresque cuando termine).
+   *
+   * @returns `processing` mientras el job corre; `done` cuando ya tiene master;
+   *          `error` si el transcode falló o se interrumpió (reinicio).
+   */
+  async getProcessingState(
+    mediaId: string,
+    actor: AuthenticatedUser,
+  ): Promise<VideoJobState> {
+    const { media } = await this.loadManageable(mediaId, actor);
+    if (media.kind !== 'video') {
+      return { state: 'done', step: 'listo' };
+    }
+    const job = this.videoJobs.get(mediaId);
+    if (job) return job;
+    if (media.storage_key) return { state: 'done', step: 'listo' };
+    if (media.processing_error) {
+      return { state: 'error', step: 'error', error: media.processing_error };
+    }
+    return {
+      state: 'error',
+      step: 'interrumpido',
+      error:
+        'El procesamiento se interrumpió (probablemente por un reinicio del servidor). Borra este video y vuelve a subirlo.',
+    };
+  }
+
+  /** SHA-256 de un archivo, leyéndolo por streaming (no lo carga entero en memoria). */
+  private hashFile(path: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = createHash('sha256');
+      const stream = createReadStream(path);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
   }
 
   /**
@@ -309,17 +637,22 @@ export class ImagesService {
     return { ok: true };
   }
 
-  /** Borra una imagen: objetos del almacenamiento + fila + ajustes del álbum. */
+  /** Borra un elemento: objetos del almacenamiento + fila + ajustes del álbum. */
   async remove(mediaId: string, actor: AuthenticatedUser): Promise<void> {
     const { media } = await this.loadManageable(mediaId, actor);
     const variants = await this.prisma.media_variants.findMany({
       where: { media_id: media.media_id },
     });
 
-    await this.storage.remove(media.storage_key);
-    await Promise.all(
-      variants.map((variant) => this.storage.remove(variant.storage_key)),
-    );
+    // `storage_key` puede ser `null` si es un video cuyo transcode nunca
+    // terminó; `hls_manifest_key` llega en la Fase 14c.
+    const objectKeys = [
+      media.storage_key,
+      media.poster_key,
+      media.hls_manifest_key,
+      ...variants.map((v) => v.storage_key),
+    ].filter((k): k is string => typeof k === 'string' && k.length > 0);
+    await Promise.all(objectKeys.map((key) => this.storage.remove(key)));
 
     await this.prisma.$transaction(async (tx) => {
       // Si esta imagen era la portada, primero se quita la referencia
@@ -364,7 +697,8 @@ export class ImagesService {
     media: {
       media_id: string;
       album_id: string;
-      storage_key: string;
+      kind: 'photo' | 'video';
+      storage_key: string | null;
       original_name: string | null;
       mime_type: string;
       width: number;
@@ -377,13 +711,18 @@ export class ImagesService {
       status: string;
       rights: Prisma.JsonValue;
       created_at: Date;
+      duration_ms?: number | null;
+      processing_error?: string | null;
     },
     variants: { label: string; format: string; storage_key: string; width: number; height: number }[],
     visibility: MediaVisibility,
   ) {
+    const processing =
+      media.kind === 'video' && !media.storage_key && !media.processing_error;
     return {
       mediaId: media.media_id,
       albumId: media.album_id,
+      kind: media.kind,
       originalName: media.original_name,
       mimeType: media.mime_type,
       width: media.width,
@@ -396,8 +735,16 @@ export class ImagesService {
       status: media.status,
       rights: sanitizeRightsPartial(media.rights),
       createdAt: media.created_at,
+      durationMs: media.duration_ms ?? null,
+      processing,
+      processingError: media.processing_error ?? null,
       urls: {
-        original: this.storage.urlFor(media.storage_key, visibility),
+        // Esta es la vista del Studio (solo dueño/admin): sí se muestra el
+        // original/master limpio. No existe aún si el video se está
+        // transcodificando (`storage_key` nulo).
+        ...(media.storage_key
+          ? { original: this.storage.urlFor(media.storage_key, visibility) }
+          : {}),
         ...Object.fromEntries(
           variants.map((v) => [
             v.label,

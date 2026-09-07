@@ -24,9 +24,12 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
   además de ajustes de identidad y bandeja de contacto (roles `admin`+).
 - **Identidad real**: login en 3 pasos (correo → contraseña → 2FA si aplica), JWT en cookie
   httpOnly + refresh con rotación, roles dinámicos con jerarquía de autoridad, 2FA TOTP.
-- **Seguridad de archivos real**: validación por contenido (magic bytes), re-encode obligatorio,
-  tiro de metadatos EXIF/GPS, límites contra decompression bombs y DoS de subida, imágenes
-  privadas solo por URL firmada.
+- **Seguridad de archivos real**: validación por contenido (magic bytes / `ffprobe`), re-encode
+  obligatorio, tiro de metadatos EXIF/GPS, límites contra decompression bombs y DoS de subida,
+  archivos privados solo por URL firmada.
+- **Video** (Fase 14, en curso): se sube, se valida con `ffprobe` (contenedor, duración,
+  resolución, frame rate) y se transcodifica en segundo plano a un master limpio + póster + preview
+  MP4 720p; se reproduce en el lightbox. Marca de agua y HLS adaptativo llegan en 14c.
 - **Protección de la obra**: marca de agua estampada por el servidor en todo lo público, el
   original de alta resolución nunca se sirve fuera de un álbum privado, registro de derechos por
   imagen embebido en IPTC/XMP con `exiftool` real.
@@ -38,7 +41,8 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
 ## Stack
 
 NestJS 11 + Prisma 7 + PostgreSQL 18 (backend) · Next.js 16 + React 19 (frontend) · Redis ·
-`sharp` (procesamiento de imagen) · almacenamiento S3-compatible · Docker Compose.
+`sharp` (imagen) + `ffmpeg`/`ffprobe` (video) + `exiftool` (derechos IPTC/XMP) · almacenamiento
+S3-compatible · Docker Compose.
 
 ## Documentación
 
@@ -92,7 +96,8 @@ nivel igual o superior al suyo.
 - **Contenido** (`media` — foto hoy, video en la Fase 14): `POST /albums/:id/media` (subida) ·
   `GET /albums/:id/media` · `POST /albums/:id/media/reorder` ·
   `POST /albums/:id/media/status` (curación en bloque) ·
-  `PATCH /media/:id` (incluye `status` y `rights`) · `DELETE /media/:id`
+  `PATCH /media/:id` (incluye `status` y `rights`) · `DELETE /media/:id` ·
+  `GET /media/:id/processing` (estado del transcode de un video)
 - **Entrega pública**: `GET /galleries` (índice; `?featured=true` para las de portada) ·
   `GET /g/:slug` (galería, solo contenido publicado) · `GET /media/:key` (archivos, driver de disco)
 - **Sitio**: `GET /site` (identidad pública, incluye marca de agua y derechos) ·
@@ -138,8 +143,10 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-101 tests, 15 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
-pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb), dos
+107 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb),
+`video-pipeline.service.spec.ts` (integración con `ffmpeg`/`ffprobe`/`exiftool` reales: valida un
+MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview 720p), dos
 suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas), las
 unitarias de `SiteService` / `ContactService` / `ImagesService` / `LicensingService` (validación del hero publicado,
 honeypot, escape del correo, cambio de estado en bloque acotado al álbum, regeneración en segundo

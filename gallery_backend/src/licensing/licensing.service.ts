@@ -355,6 +355,12 @@ export class LicensingService {
     }
 
     const media = token.license.media;
+    // `storage_key` nulo solo pasaría con un video cuyo transcode nunca
+    // terminó — no debería llegar aquí (no se licencia lo no publicado), pero
+    // el mismo 404 cubre el caso.
+    if (!media.storage_key) {
+      throw new NotFoundException();
+    }
     const object = await this.storage.read(media.storage_key);
     if (!object) {
       throw new NotFoundException();
@@ -368,7 +374,12 @@ export class LicensingService {
       (token.license.conditions ? `: ${token.license.conditions}` : '') +
       '.';
     const buffer = await streamToBuffer(object.stream);
-    const format: EmbeddableFormat = media.mime_type === 'image/png' ? 'png' : 'jpeg';
+    const format: EmbeddableFormat =
+      media.kind === 'video'
+        ? 'mp4'
+        : media.mime_type === 'image/png'
+          ? 'png'
+          : 'jpeg';
     const withLicenseeInfo = await this.metadata.embed(buffer, format, {
       ...baseRights,
       rightsStatement: `${baseRights.rightsStatement} ${licenseeNote}`.trim(),
@@ -379,7 +390,7 @@ export class LicensingService {
       data: { status: 'fulfilled' },
     });
 
-    const ext = format === 'png' ? 'png' : 'jpg';
+    const ext = format === 'png' ? 'png' : format === 'mp4' ? 'mp4' : 'jpg';
     return {
       stream: bufferToStream(withLicenseeInfo),
       contentType: object.contentType,
