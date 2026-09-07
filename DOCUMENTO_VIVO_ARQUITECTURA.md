@@ -2160,3 +2160,76 @@ Bloque V1–V14 (video) y L1–L17 (licenciamiento, ya cubre video) en `PRUEBAS_
 > **No verificado en navegador real** (todo el entorno es sin browser): la reproducción visual del
 > `<video>`/`hls.js` en el lightbox y el hero, y el respeto a `prefers-reduced-motion` en pantalla,
 > no se comprobaron en un navegador — sí todo el flujo y el servido de cada pieza por API.
+
+## 24. Fase 15 — Layout "libro" (fotolibro que se hojea) — diseño, sin construir (2026-09-07)
+
+> Solo diseño. Registra las decisiones para arrancar la Fase 15 sin re-discutirlas. Decisión marco
+> en `PLAN_DESARROLLO.md` §4 **D15**. Inspiración: la sección "The Story" de
+> `nois7.com/world-of-dreams` (el dueño la señaló) — un libro que se abre y cuyas páginas pasan
+> según bajas.
+
+### 24.1 Qué es y dónde encaja
+
+Un **layout de álbum más**: `albums.layout` gana el valor `'book'` (junto a `masonry` / `justified`
+/ `grid` / `carousel`). Cualquier colección se puede poner en modo "libro" desde el gestor. **No**
+es una página suelta ni un componente de la portada — es la misma pieza reutilizable que el resto
+de layouts, para no atarla a una sola colección.
+
+`albums.layout` ya es `String @db.VarChar(20)` → **sin migración**. El valor `'book'` se añade en:
+`gallery_backend/src/albums/dto/album.dto.ts` (`ALBUM_LAYOUTS`), `gallery_frontend/src/lib/gallery-schema.ts`
+(`z.enum([...])`), `gallery_frontend/src/lib/studio-types.ts` (`LAYOUTS` + la unión de `AlbumRow.layout`),
+`AlbumSettingsForm.tsx` (la opción del `<select>`), `GalleryLayout.tsx` (la rama nueva), y la lista
+de layouts del `README.md`.
+
+### 24.2 La animación — decisiones tomadas
+
+| Eje | Decisión | Por qué / alternativa descartada |
+|---|---|---|
+| **Realismo del pase** | **`page-flip` (StPageFlip, MIT, ~30 KB) en modo HTML**, bundleado por npm (no CDN). | El dueño pidió "el más completo": una hoja que se curva con sombra no es viable en CSS puro a calidad. El **modo HTML** mantiene `<div>`/`<img>` reales en el DOM → `srcset`, BlurHash, `loading="lazy"` y SEO siguen funcionando (el modo canvas los perdería). Se bundlea (no se carga de un CDN como `hls.js`) porque es una pieza central del feature, versionada en `package-lock.json`. Es la primera librería de UI que entra al proyecto — justificada por D15. |
+| **Disparo con el scroll** | **Sección fija (`position: sticky`) + progreso de scroll.** Un contenedor alto (`(pliegos + 2) × ~90vh`) hace de "pista"; mientras la sección está pegada, `progress = 0..1` se mapea a `pliego actual` y se llama `pageFlip.flip(pageIndex)` al cambiar. | El efecto "cinematográfico" del sitio de referencia. Frágil: hay que calcular el progreso a mano (`getBoundingClientRect` en `rAF`, activado por un `IntersectionObserver` sobre la sección), soltar el pin en los extremos, y no romper teclado ni móvil. Por eso la caída a `grid` (24.3) **no es opcional**. |
+| **Contenido por pliego** | **Dos imágenes por pliego** (página izquierda + derecha), como un libro abierto. Portada = título del álbum + colores del `theme` (+ la 1ª foto tenue de fondo). Contraportada = CTA ("Solicitar licencia de esta colección" / enlace a `/contacto`). Número impar de medios → última página derecha en blanco (papel). | Lo pidió el dueño. En móvil se cae igual a una por pantalla. |
+| **Móvil** (`< ~700px`) | **Una página por pantalla; se pasa con gesto** (swipe/tap — lo maneja `page-flip` en modo portrait). **Sin** scroll fijo (el scroll-jacking en un teléfono es mala UX). | Un libro de dos páginas no cabe en vertical; el pin en móvil pelea con el scroll nativo. |
+| **`prefers-reduced-motion` · sin JS · si `page-flip` no carga** | **Se renderiza el mismo conjunto de imágenes como `grid`** (reutiliza el markup del layout `grid` existente): sin 3D, sin pin, sin scroll-jacking. | Accesibilidad no negociable en este proyecto (Fase 6). Y es el fallback natural de mejora progresiva: el SSR pinta el `grid`, y solo si hay JS + movimiento permitido + la librería carga, se "mejora" a libro. |
+
+### 24.3 Piezas nuevas (frontend)
+
+- **`components/BookLayout.tsx`** — orquesta: decide `grid` (fallback) vs libro; en libro monta
+  `page-flip`, crea el contenedor-pista, engancha el `IntersectionObserver` + el listener de
+  scroll (throttled con `requestAnimationFrame`), y traduce progreso → `flip()`. Limpia el
+  `will-change` de la hoja que ya terminó de girar; usa `content-visibility: auto` en los pliegos
+  fuera de vista; precarga las imágenes del **pliego siguiente**.
+- **`lib/use-scroll-progress.ts`** — hook: dado un `ref` y (opcional) un rango, devuelve `0..1`
+  del avance del elemento por el viewport. Reutilizable.
+- **CSS** — un bloque nuevo en `globals.css` (o un módulo): la pista, la escena pegada, la
+  portada/lomo, la textura de papel, y las mismas variables de `theme` que el resto de layouts.
+- **`page-flip`** como `dependency` en `gallery_frontend/package.json` (+ su hoja de estilos, que
+  trae las sombras del curl — se importa).
+- Las páginas siguen usando **`GalleryImage`** (el tile de siempre: `srcset`, BlurHash, lazy). Un
+  medio `kind: 'video'` en una página → el póster + un ▸; al tocarlo abre el **`Lightbox`**
+  existente en ese índice (que ya reproduce el video). Tocar cualquier página abre el `Lightbox`.
+
+### 24.4 Rendimiento y seguridad
+
+- **CSP**: `page-flip` se **bundlea**, así que **no** hace falta tocar `script-src`. Sus imágenes
+  son `<img>` del propio DOM (`img-src 'self' <api>` ya lo cubre). No abre red.
+- **Presupuesto de rendimiento** (Fase 6): el pin + el flip + imágenes grandes es lo más caro que
+  tendría el frontend. Mitigaciones: solo se anima mientras la sección está en viewport; se sirven
+  los derivados `medium`/`large` (no el original); `content-visibility` en pliegos lejanos;
+  precarga solo del pliego siguiente; el listener de scroll pasa por `rAF` y sale temprano si el
+  pin no está activo. Hay que **medir** (Core Web Vitals) antes de darlo por bueno.
+- **Sin migración, sin cambios de backend.** `GET /g/:slug` ya devuelve `{ album, media }` con
+  todo lo necesario (`layout`, `theme`, `kind`, `urls`).
+
+### 24.5 Sub-fases (Fase 15)
+
+- **15a** — Plumbing del valor `book` en los 6 sitios + un pliego **estático** de dos imágenes
+  (sin animación) + el fallback a `grid` (móvil, sin-JS, `prefers-reduced-motion`). Ship-able:
+  ya es un layout "de libro" plano y accesible.
+- **15b** — Bundlear `page-flip`; curl realista sobre los pliegos estáticos; pasar página con
+  **gesto/arrastre** (sin scroll todavía). Escritorio (dos páginas) + móvil (una).
+- **15c** — El **scroll fijo** que pasa las páginas en escritorio + navegación por teclado +
+  botones prev/next + la pasada de rendimiento.
+- **15d** — Pulido: portada/contraportada desde el `theme`, páginas de video, CTA de licencia,
+  medición de CWV.
+
+Encaja después de la Fase 13 o antes — no depende de nada de pago ni del despliegue.

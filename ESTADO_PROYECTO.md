@@ -436,14 +436,19 @@ Lo que queda, cuando el dueño quiera:
    ≈2026‑09‑17. `CLAUDE.md` "Qué es este proyecto" actualizado al marco nuevo. No queda ninguna
    sub-tarea de licenciamiento pendiente — lo que sigue es el despliegue real (punto 1 de arriba) o
    la Fase 13 cuando llegue su fecha.
-5. **Fase 14 — Video (diseño listo, sin construir, 2026-09-05)** — el dueño pidió diseñar el soporte
-   de video. Decisión D14 en `PLAN_DESARROLLO.md` §4 + diseño técnico completo en
-   `DOCUMENTO_VIVO_ARQUITECTURA.md` §19: unificar `images`→`media` con discriminador `kind`;
-   pipeline `ffmpeg` propio (validación `ffprobe`, master limpio con strip total de metadatos, marca
-   de agua del servidor en las renditions, HLS adaptativo para ver, master MP4 de un solo uso para
-   la licencia). Sub-fases 14a (refactor a `media`) → 14b (pipeline + reproducción) → 14c (marca +
-   HLS) → 14d (licenciamiento de video + hero en video). No depende de Stripe; se construye cuando
-   el dueño lo confirme.
+5. **Fase 14 — Video ✅ COMPLETA (14a–14d, 2026-09-07)** — `DOCUMENTO_VIVO_ARQUITECTURA.md` §19–§23.
+   Unificación `images`→`media`; pipeline `ffmpeg` propio; marca de agua + HLS adaptativo;
+   licenciamiento de video + hero en video. Verificado en vivo de punta a punta.
+6. **Fase 15 — Layout "libro" (diseño listo, sin construir, 2026-09-07)** — el dueño pidió replicar
+   la sección "The Story" de nois7.com/world-of-dreams (un fotolibro que se hojea con el scroll).
+   Decisión D15 en `PLAN_DESARROLLO.md` §4 + diseño en `DOCUMENTO_VIVO_ARQUITECTURA.md` §24: nuevo
+   layout de álbum `book` (sin migración — `albums.layout` ya es String); sección fija + pase de
+   página fotorrealista con **`page-flip` (StPageFlip) en modo HTML** bundleado por npm (mantiene
+   los `<img>` reales → `srcset`/BlurHash/lazy/SEO intactos); dos imágenes por pliego; móvil = una
+   página con gesto; **`prefers-reduced-motion` / sin JS / fallo de la librería → cae a `grid`**.
+   Sub-fases 15a (plumbing + pliego estático + fallback) → 15b (curl realista con gesto) → 15c
+   (scroll fijo + teclado + rendimiento) → 15d (pulido). No depende de Stripe ni del despliegue; se
+   construye cuando el dueño lo confirme.
 
 ---
 
