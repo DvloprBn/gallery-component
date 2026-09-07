@@ -48,6 +48,8 @@ export function BookLayout({
   onOpen: (index: number) => void;
 }) {
   const { album, media } = gallery;
+  const coverBg =
+    media[0]?.urls.medium ?? media[0]?.urls.small ?? media[0]?.urls.large;
   const [mode, setMode] = useState<Mode>('static');
   const [page, setPage] = useState(0);
   const [leafCount, setLeafCount] = useState(0);
@@ -251,8 +253,12 @@ export function BookLayout({
   if (mode === 'static') {
     const spreads = toSpreads(media);
     return (
-      <div className="g-book">
-        <BookCover album={album} />
+      <div
+        className="g-book"
+        role="region"
+        aria-label={`Fotolibro: ${album.title}`}
+      >
+        <BookCover album={album} bg={coverBg} count={media.length} />
         {spreads.map((s, si) => (
           <div className="g-book__spread" key={s.left.mediaId}>
             <StaticPage media={s.left} index={si * 2} folio={si * 2 + 1} onOpen={onOpen} priority={si === 0} />
@@ -280,10 +286,18 @@ export function BookLayout({
         ref={trackRef}
         style={{ '--book-positions': positions } as React.CSSProperties}
       >
-        <div className="g-book__stage">
+        <div
+          className="g-book__stage"
+          role="region"
+          aria-roledescription="fotolibro"
+          aria-label={`Fotolibro: ${album.title}. Página ${Math.min(
+            page + 1,
+            shownLeaves,
+          )} de ${shownLeaves}.`}
+        >
           <div className="g-book__flip" ref={hostRef}>
             <div className="g-book__leaf g-book__leaf--cover" data-density="hard">
-              <BookCover album={album} />
+              <BookCover album={album} bg={coverBg} count={media.length} />
             </div>
             {media.map((m, i) => (
               <div className="g-book__leaf" key={m.mediaId}>
@@ -332,25 +346,46 @@ export function BookLayout({
   );
 }
 
-/** Portada: título + descripción del álbum, con el acento del `theme`. */
-function BookCover({ album }: { album: Gallery['album'] }) {
+/**
+ * Portada: título + descripción del álbum con la tipografía y el acento del
+ * `theme`, y la primera imagen atenuada de fondo.
+ */
+function BookCover({
+  album,
+  bg,
+  count,
+}: {
+  album: Gallery['album'];
+  bg?: string;
+  count: number;
+}) {
   return (
     <div className="g-book__cover">
-      <span className="g-book__kicker">Fotolibro</span>
-      <h2 className="g-book__title">{album.title}</h2>
-      {album.description ? (
-        <p className="g-book__sub">{album.description}</p>
+      {bg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="g-book__cover-bg" src={bg} alt="" aria-hidden="true" loading="lazy" />
       ) : null}
+      <div className="g-book__cover-inner">
+        <span className="g-book__kicker">Fotolibro</span>
+        <h2 className="g-book__title">{album.title}</h2>
+        {album.description ? (
+          <p className="g-book__sub">{album.description}</p>
+        ) : null}
+        <span className="g-book__count">
+          {count} {count === 1 ? 'pieza' : 'piezas'}
+        </span>
+      </div>
     </div>
   );
 }
 
-/** Contraportada: CTA de licencia. */
+/** Contraportada: cierre + CTA de licencia. */
 function BookBack() {
   return (
     <div className="g-book__back">
+      <span className="g-book__fin">Fin</span>
       <p className="g-book__back-text">
-        ¿Te interesa alguna imagen de esta colección?
+        ¿Te interesó alguna imagen? Puedo licenciártela para tu proyecto.
       </p>
       <Link href="/contacto" className="g-book__cta">
         Solicitar una licencia

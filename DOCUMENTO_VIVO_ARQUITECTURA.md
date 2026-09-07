@@ -2403,3 +2403,68 @@ tecla no haga *también* scroll). Botones ‹ › explícitos + un indicador `n 
 > que el scroll pase las páginas y las páginas muevan el scroll de vuelta, el teclado, y que el
 > rendimiento sea aceptable (Core Web Vitals). El código implementa el modelo del diseño (§24.2,
 > §24.4) pero su comportamiento en pantalla está sin comprobar.
+
+---
+
+## 28. Fase 15d — Layout "libro": pulido (construida, 2026-09-07) · Fase 15 completa
+
+Último tramo de la Fase 15. No añade mecánica nueva: pule la portada, la contraportada, las
+páginas de video y la accesibilidad del fotolibro. Con esto la Fase 15 queda **completa**.
+
+### 28.1 Portada y contraportada
+
+- **`BookCover`** ahora recibe `bg` y `count`. `bg` es `media[0].urls.medium ?? small ?? large`
+  (la primera pieza del álbum) y se pinta como `<img class="g-book__cover-bg">` a
+  `opacity: 0.16` detrás del texto — la "foto de portada impresa". El texto va en
+  `.g-book__cover-inner` (`position: relative; z-index: 1`) para quedar por encima. `count`
+  se muestra como `«N piezas»` bajo el título.
+- **`BookBack`** añade la floritura `<span class="g-book__fin">Fin</span>` (display del `theme`,
+  itálica, acento) y reformula el texto hacia la licencia: _"¿Te interesó alguna imagen? Puedo
+  licenciártela para tu proyecto."_ El CTA sigue siendo `<Link href="/contacto">`.
+- `.g-book__cover` / `.g-book__back` pasan a `position: relative; overflow: hidden` para recortar
+  la foto de fondo. Todo el color sale de tokens del `theme` (`--g-accent`, `--pf-display`,
+  `--book-paper`), sin valores fijos nuevos.
+
+### 28.2 Páginas de video en el libro
+
+No hacía falta código: `GalleryImage` ya pinta `.g-video-badge` (el ▶ y la duración) para
+`kind === 'video'`, y tocar la hoja abre el lightbox, que ya reproduce HLS (§22.4). El pulido es
+CSS: `.g-book__leaf .g-video-badge svg` gana tamaño (`padding: 0.85rem; transform: scale(1.15)`)
+para que el ▶ tenga presencia en una hoja entera.
+
+### 28.3 Paspartú (las copias sobre el papel)
+
+`.g-book__leaf` gana `padding: clamp(0.5rem, 2.4vw, 1.4rem)` y la `.g-figure` interior un
+`border-radius: 2px` + `box-shadow` sutil — la foto se "monta" sobre el papel con margen, en vez
+de ir a sangre. El folio y el botón transparente (`.g-book__leaf-btn`, `inset: 0`) no cambian.
+
+### 28.4 Accesibilidad
+
+- Modo estático: el contenedor `.g-book` es `role="region"` con
+  `aria-label="Fotolibro: {título}"`.
+- Modo flip: `.g-book__stage` es `role="region"` + `aria-roledescription="fotolibro"` +
+  `aria-label` que incluye _"Página N de M"` (se actualiza con `page`). El `.g-book__progress`
+  con `aria-live="polite"` ya anunciaba el cambio de página desde la 15b.
+
+### 28.5 Verificación
+
+- `tsc` front limpio; `next build` producción OK (16 rutas). Backend sin cambios (**112 tests /
+  16 suites**). `verify-15a.mjs` ampliado a **14/14** — cubre el markup nuevo del SSR
+  (`g-book__count`, `g-book__cover-bg`, `g-book__cover-inner`, `g-book__fin`, `role="region"`).
+
+> **No verificado en navegador real** (sin herramienta de browser), como toda la Fase 15: el
+> pase de página, el scroll fijo, el arrastre, la caída a `grid`/estático y **Core Web Vitals**
+> siguen sin comprobarse en pantalla. Es lo pendiente cuando haya un entorno con navegador
+> (previsiblemente en el despliegue a `galeria.dvloprbn.dev`).
+
+### 28.6 Estado de la Fase 15
+
+| Sub-fase | Estado |
+|---|---|
+| 15a — plumbing + pliego estático | ✅ construida y verificada (SSR) |
+| 15b — pase de página con `page-flip` | ✅ construida (no verificada en navegador) |
+| 15c — scroll fijo + teclado | ✅ construida (no verificada en navegador) |
+| 15d — pulido (portada, video, CTA, a11y) | ✅ construida (SSR verificado) |
+
+**Fase 15 completa.** Pendiente transversal: medición de Core Web Vitals y prueba visual del
+pase de página en un navegador real.
