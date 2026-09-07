@@ -43,7 +43,7 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
 
 ## Stack
 
-NestJS 11 + Prisma 7 + PostgreSQL 18 (backend) · Next.js 16 + React 19 + `hls.js` (frontend) · Redis ·
+NestJS 11 + Prisma 7 + PostgreSQL 18 (backend) · Next.js 16 + React 19 + `hls.js` + `page-flip` (frontend) · Redis ·
 `sharp` (imagen) + `ffmpeg`/`ffprobe` (video, HLS) + `exiftool` (derechos IPTC/XMP) · almacenamiento
 S3-compatible · Docker Compose.
 

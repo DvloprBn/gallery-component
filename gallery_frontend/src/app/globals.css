@@ -1126,6 +1126,144 @@ button.danger:not(.link-button):hover:not(:disabled) {
   }
 }
 
+/* ── Modo "flip": page-flip (StPageFlip) sobre las hojas (Fase 15b) ── */
+
+/* Estilos estructurales que la librería necesita (de su stPageFlip.css),
+   acotados bajo .g-book para no filtrarse al resto del sitio. */
+.g-book .stf__parent {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  transform: translateZ(0);
+  touch-action: pan-y;
+}
+.g-book .stf__wrapper {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+.g-book .stf__block {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  perspective: 2000px;
+}
+.g-book .stf__item {
+  display: none;
+  position: absolute;
+  transform-style: preserve-3d;
+}
+.g-book .stf__outerShadow,
+.g-book .stf__innerShadow,
+.g-book .stf__hardShadow,
+.g-book .stf__hardInnerShadow {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.g-book--flip {
+  align-items: center;
+}
+
+.g-book__flip {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  /* page-flip fija la altura; esto solo evita un salto antes de que monte. */
+  min-height: 60vh;
+}
+
+.g-book__leaf {
+  position: relative;
+  background: var(--book-paper);
+  overflow: hidden;
+  display: flex;
+}
+
+.g-book__leaf .g-figure {
+  width: 100%;
+  height: 100%;
+}
+
+.g-book__leaf .g-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Botón transparente que cubre la hoja: page-flip reenvía el clic a los
+   `<button>`, así un toque abre el lightbox sin pasar la página. */
+.g-book__leaf-btn {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  padding: 0;
+}
+
+.g-book__leaf--cover,
+.g-book__leaf--blank {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--g-accent) 16%, var(--book-paper)),
+      var(--book-paper));
+}
+.g-book__leaf--cover .g-book__cover,
+.g-book__leaf--cover .g-book__back {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  margin: auto;
+}
+
+.g-book__leaf .g-book__folio {
+  position: absolute;
+  bottom: 0.6rem;
+  right: 0.9rem;
+  z-index: 3;
+  color: #fff;
+  mix-blend-mode: difference;
+}
+
+.g-book__controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: clamp(1rem, 3vw, 1.75rem);
+}
+
+.g-book__nav {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--book-edge);
+  background: var(--book-paper);
+  color: var(--g-fg);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.g-book__nav:hover {
+  border-color: var(--g-accent);
+}
+
+.g-book__hint {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .g-book__hint {
+    display: none;
+  }
+}
+
 /* --- Lightbox --- */
 .g-lightbox {
   position: fixed;

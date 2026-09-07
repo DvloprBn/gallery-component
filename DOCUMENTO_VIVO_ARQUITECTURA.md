@@ -2290,3 +2290,59 @@ incompleta"**. Pre-existente desde la Fase 3, no lo introdujo la 15a. Test nuevo
 > **No verificado en navegador real** (sin herramienta de browser): la apariencia del libro
 > estático (papel, lomo, folios, portada) no se comprobó visualmente; sí que el markup y las clases
 > se sirven y que el layout se selecciona por `album.layout`.
+
+## 26. Fase 15b — Layout "libro": pase de página con `page-flip` (construida, 2026-09-07)
+
+Segundo tramo de la Fase 15. Sobre el fotolibro plano de la 15a, monta el **pase de página
+fotorrealista** con arrastre; el scroll fijo que pasa las páginas llega en la 15c.
+
+### 26.1 La librería
+
+**`page-flip` (StPageFlip, v2.0.7, MIT, ~44 KB min)** — bundleada por **npm** (no CDN), en
+`gallery_frontend/package.json`. Es la **primera librería de UI del proyecto**; se justifica porque
+un pase de página con curvatura y sombra no es viable en CSS puro (D15). Se usa en **modo HTML**
+(`loadFromHTML`): mantiene los `<div>`/`<img>` reales en el DOM, así que `srcset`, BlurHash y
+`loading="lazy"` siguen funcionando (el modo canvas los perdería). No trae `.d.ts` ni CSS en
+`dist` → hay una declaración mínima en `gallery_frontend/src/types/page-flip.d.ts` y sus reglas
+estructurales (`.stf__*`) se inlinearon en `globals.css` **acotadas bajo `.g-book`**.
+
+- **CSP**: al estar bundleada, **no** hace falta tocar `script-src` (a diferencia de `hls.js`). No
+  hace peticiones de red; sus sombras son estilos inline (`style-src 'unsafe-inline'` ya lo cubre).
+- Se importa **dinámicamente** dentro de un `useEffect` (`import('page-flip/dist/js/page-flip.module.js')`)
+  — nunca entra al bundle del servidor ni al render inicial. La destructuración del export tolera
+  que un empaquetador lo envuelva en `.default`.
+
+### 26.2 Los tres modos de `BookLayout`
+
+| Modo | Cuándo | Qué |
+|---|---|---|
+| **`static`** | SSR, y lo que queda **sin JS**. | El fotolibro plano de la 15a (portada + pliegos de dos hojas + contraportada). Accesible, sin animación. |
+| **`flip`** | Cliente, `prefers-reduced-motion` **no** activo y `page-flip` carga bien. | Una lista **plana** de hojas (`.g-book__leaf`): portada (`data-density="hard"`) → una hoja por medio → hoja en blanco si el nº es impar (deja la contraportada sola) → contraportada. `page-flip` con `showCover: true`, `size: 'stretch'`, `disableFlipByClick: true` (el clic **no** pasa página) y un `ResizeObserver` → `pageFlip.update()`. |
+| **`grid`** | Cliente, `prefers-reduced-motion` activo **o** `page-flip` no carga / falla al iniciar. | Reutiliza `GalleryLayout` forzando `layout: 'grid'` — las mismas imágenes, sin libro ni 3D. |
+
+El SSR renderiza `static`; en `useEffect` se decide `grid` (menos movimiento) o `flip`; si el
+montaje de `page-flip` lanza, se cae a `grid`. **Sin JS → se queda en `static`** (el fotolibro
+plano ya es accesible; es una desviación consciente del "→ grid" del diseño, más suave para el
+lector).
+
+### 26.3 Tocar una hoja abre el lightbox
+
+`page-flip` solo reenvía los clics a `<a>` y `<button>` dentro de las hojas. En modo `flip` cada
+hoja lleva la imagen (con `GalleryImage`, **sin** `onOpen` — no es interactiva) **más** un
+`<button className="g-book__leaf-btn">` transparente a pantalla completa que llama `onOpen(index)`.
+Así: **arrastrar la esquina o los botones ‹ ›** pasan la página; **un toque** abre el `Lightbox`.
+Botones prev/next explícitos (`flipPrev()`/`flipNext()`) para descubribilidad y accesibilidad.
+
+### 26.4 Verificación
+
+- `tsc` front limpio. `next build` producción OK; `page-flip` (`loadFromHTML`) aparece en los
+  chunks de cliente → se bundlea de verdad. **112 tests / 16 suites** (sin cambios de backend).
+- **`verify-15a.mjs` sigue 9/9**: el SSR no cambió — el fotolibro plano (baseline sin JS) está
+  intacto.
+
+> **No verificado en navegador real** (sin herramienta de browser, como en las fases de video): el
+> pase de página de `page-flip`, el arrastre de la esquina, la "mejora" de `static` → `flip`, la
+> caída a `grid` con `prefers-reduced-motion` o si la librería falla, el toque-para-lightbox vía el
+> botón transparente y los botones ‹ › no se probaron en un navegador. El código sigue la API
+> documentada de la librería y la lógica de fallback es directa, pero el comportamiento visual e
+> interactivo está sin comprobar visualmente.
