@@ -2346,3 +2346,60 @@ Botones prev/next explícitos (`flipPrev()`/`flipNext()`) para descubribilidad y
 > botón transparente y los botones ‹ › no se probaron en un navegador. El código sigue la API
 > documentada de la librería y la lógica de fallback es directa, pero el comportamiento visual e
 > interactivo está sin comprobar visualmente.
+
+## 27. Fase 15c — Layout "libro": scroll fijo + teclado (construida, 2026-09-07)
+
+Tercer tramo de la Fase 15: el efecto "cinematográfico" — la sección se queda **fija** y las
+páginas pasan según el progreso de scroll — más navegación por teclado y una pasada de rendimiento.
+
+### 27.1 Scroll fijo (`sticky`) ↔ `page-flip`
+
+En modo `flip`, el libro se envuelve en:
+
+```
+<div class="g-book__track" style="--book-positions: N">   ← alto: N × 88vh (la "pista")
+  <div class="g-book__stage">                              ← position: sticky; top: 0; 100vh
+    <div class="g-book__flip"> … hojas … </div>
+    <div class="g-book__controls"> ‹  ·  n/total  ·  › </div>
+  </div>
+</div>
+```
+
+- El pin (`position: sticky`) **solo** se activa con `@media (min-width: 701px) and
+  (prefers-reduced-motion: no-preference)`. En móvil la pista mide `auto` y la escena es `static` —
+  el libro fluye y se pasa con gesto (decisión de D15: nada de scroll-jacking en un teléfono).
+- **Scroll → página**: un listener `scroll` pasivo, throttleado con `requestAnimationFrame`, mide
+  `getBoundingClientRect()` de la pista; si está pineada
+  (`rect.top <= 0 && rect.bottom >= innerHeight`) calcula
+  `progress = -rect.top / (rect.height - innerHeight)` y
+  `target = round(progress × (leafCount - 1))`; si cambió y no coincide con la página actual,
+  `pageFlip.flip(target)`. Sale temprano si no está pineada o si no es escritorio.
+- **Página → scroll** (sincronía inversa): en el evento `flip`, si lo disparó el usuario
+  (arrastre / botones / teclado — **no** nuestro propio handler de scroll, controlado por un flag
+  `fromScroll`), se hace `window.scrollTo` a la posición de la pista que corresponde a esa página,
+  con `behavior: 'smooth'` — así soltar el scroll no "regresa" el libro.
+
+### 27.2 Teclado
+
+Mientras la pista está pineada (y no hay lightbox abierto): `ArrowRight` / `ArrowDown` / `PageDown`
+→ `flipNext()`; `ArrowLeft` / `ArrowUp` / `PageUp` → `flipPrev()` (con `preventDefault`, para que la
+tecla no haga *también* scroll). Botones ‹ › explícitos + un indicador `n / total` (`aria-live`).
+
+### 27.3 Rendimiento
+
+- El loop de scroll va por `rAF` y **no hace nada** si el libro no está pineado.
+- `.g-book__flip { contain: layout paint }` aísla el subárbol del libro.
+- **Precarga del pliego siguiente**: en cada `flip`, las `<img>` de las hojas `p`, `p+1`, `p+2`
+  que sigan en `loading="lazy"` pasan a `loading="eager"` (las lejanas siguen perezosas).
+- Se sirven los derivados WebP (`GalleryImage` con `sizes` de media anchura), nunca el original.
+- `prefers-reduced-motion` → modo `grid` (sin pista, sin pin, sin `page-flip`).
+
+### 27.4 Verificación
+
+- `tsc` front limpio; `next build` producción OK. **112 tests / 16 suites** (sin cambios de
+  backend). `verify-15a.mjs` **9/9** — el SSR (fotolibro plano, baseline sin JS) no cambió.
+
+> **No verificado en navegador real** (sin herramienta de browser): que la sección se quede fija,
+> que el scroll pase las páginas y las páginas muevan el scroll de vuelta, el teclado, y que el
+> rendimiento sea aceptable (Core Web Vitals). El código implementa el modelo del diseño (§24.2,
+> §24.4) pero su comportamiento en pantalla está sin comprobar.

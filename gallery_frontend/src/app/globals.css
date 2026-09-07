@@ -1167,12 +1167,50 @@ button.danger:not(.link-button):hover:not(:disabled) {
   align-items: center;
 }
 
+/* Pista de scroll: alta, hace de "recorrido" del libro fijo (Fase 15c). */
+.g-book__track {
+  position: relative;
+  width: 100%;
+}
+
+.g-book__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 3vw, 1.75rem);
+}
+
+/* El pin solo en escritorio y con movimiento permitido (en móvil el pin
+   pelea con el scroll nativo — ahí el libro fluye y se pasa con gesto). */
+@media (min-width: 701px) and (prefers-reduced-motion: no-preference) {
+  .g-book__track {
+    height: calc(var(--book-positions, 4) * 88vh);
+  }
+  .g-book__stage {
+    position: sticky;
+    top: 0;
+    min-height: 100vh;
+    padding-block: 2vh;
+  }
+}
+
 .g-book__flip {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
+  contain: layout paint;
   /* page-flip fija la altura; esto solo evita un salto antes de que monte. */
   min-height: 60vh;
+}
+
+.g-book__progress {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: center;
 }
 
 .g-book__leaf {
