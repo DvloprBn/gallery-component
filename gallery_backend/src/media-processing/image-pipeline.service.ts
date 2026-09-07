@@ -91,10 +91,18 @@ export class ImagePipelineService {
     // que se pida `.withMetadata()` explícito — así se van GPS y EXIF.
     const normalized = sharp(input, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
     const outputExtension = format === 'png' ? 'png' : 'jpeg';
-    const originalBuffer =
-      outputExtension === 'png'
-        ? await normalized.png({ compressionLevel: 9 }).toBuffer()
-        : await normalized.jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    let originalBuffer: Buffer;
+    try {
+      originalBuffer =
+        outputExtension === 'png'
+          ? await normalized.png({ compressionLevel: 9 }).toBuffer()
+          : await normalized.jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    } catch (error) {
+      // El header se pudo leer (`metadata()` no lanzó) pero el cuerpo está
+      // corrupto y libvips no lo puede re-codificar → 400, nunca un 500.
+      this.logger.warn(`sharp no pudo re-codificar la entrada: ${(error as Error).message}`);
+      throw new BadRequestException('La imagen está dañada o incompleta.');
+    }
 
     const originalMeta = await sharp(originalBuffer).metadata();
     const original: ProcessedOriginal = {

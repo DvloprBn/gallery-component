@@ -6,7 +6,7 @@ export interface AlbumRow {
   slug: string;
   description: string | null;
   visibility: 'public' | 'unlisted' | 'private';
-  layout: 'masonry' | 'justified' | 'grid' | 'carousel';
+  layout: 'masonry' | 'justified' | 'grid' | 'carousel' | 'book';
   theme: Record<string, unknown>;
   cover_media_id: string | null;
   sort_order: number;
@@ -85,6 +85,6 @@ export interface ShareTokenRow {
 }
 
 export const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
-export const LAYOUTS = ['masonry', 'justified', 'grid', 'carousel'] as const;
+export const LAYOUTS = ['masonry', 'justified', 'grid', 'carousel', 'book'] as const;
 export const MOTION_PRESETS = ['fade-up', 'fade', 'zoom', 'none'] as const;
 export const FONT_FAMILIES = ['system', 'serif', 'mono'] as const;

@@ -70,4 +70,17 @@ describe('ImagePipelineService', () => {
       .toBuffer();
     await expect(pipeline.process(bomb)).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('rechaza (400, no 500) un PNG cuyo header sharp SÍ lee pero cuyo cuerpo no puede re-codificar', async () => {
+    // PNG degenerado: `sharp().metadata()` reconoce el formato y las
+    // dimensiones, pero `libvips` no lo puede volver a escribir
+    // (`vips2png: unable to write to target`). Antes esto daba un 500.
+    const degenerate = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAGQAAABGCAYAAABuF6i2AAAAG0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAODjAaWQAAG7Yl7yAAAAAElFTkSuQmCC',
+      'base64',
+    );
+    await expect(pipeline.process(degenerate)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
 });

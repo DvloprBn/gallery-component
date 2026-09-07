@@ -17,6 +17,9 @@ const SIZES_BY_LAYOUT: Record<Layout, string> = {
   grid: '(max-width: 600px) 50vw, (max-width: 1100px) 33vw, 25vw',
   justified: '(max-width: 600px) 100vw, 40vw',
   carousel: '(max-width: 600px) 85vw, 60vw',
+  // `book` lo renderiza `BookLayout`, no este componente; el `sizes` es el
+  // que usan sus páginas (una hoja ≈ media anchura del libro).
+  book: '(max-width: 700px) 92vw, 46vw',
 };
 
 /**

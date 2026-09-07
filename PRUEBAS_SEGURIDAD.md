@@ -111,6 +111,7 @@ volumen/espera reales.
 | F3 | Payload embebido / polyglot | El re-encode con `sharp` reescribe la imagen entera — nada tras el EOI sobrevive (mismo mecanismo confirmado por F11) | ✅ Cubierto por diseño |
 | F4 | SVG con `<script>` | `<svg><script>` renombrado → formato `svg` no está en la lista blanca → **400** | ✅ Probado 2026-09-01 |
 | F5 | Decompression bomb | PNG 9000×9000 (81 MP, 253 KB) → **400** por `limitInputPixels` (tope `UPLOAD_MAX_IMAGE_PIXELS`) | ✅ Probado 2026-09-01 |
+| F5b | Imagen con header legible pero cuerpo irrecuperable | Un PNG degenerado que pasa `sharp().metadata()` pero falla al re-codificarse (`vips2png: unable to write to target`) → **400** "La imagen está dañada o incompleta", **nunca 500**. El re-encode del original estaba fuera del `try/catch` → daba 500; corregido en la Fase 15a. | ✅ Probado 2026-09-07 (test unitario en `image-pipeline.service.spec.ts`) |
 | F6 | DoS por tamaño | Archivo de 20 MB (tope 15 MiB) → **413** cortado en el `FileInterceptor` | ✅ Probado 2026-09-01 |
 | F7 | DoS por volumen | Rate limit dedicado por usuario (contador en Redis, TTL 1 h) → 429; tope = `UPLOAD_MAX_UPLOADS_PER_HOUR` (default **120**, dev lo sube para sembrar) | ✅ Probado 2026-09-02 — el seed de 244 fotos se cortó con 429 al pasar de 120; subir el tope lo resolvió |
 | F8 | IDOR de imagen privada | Otro usuario: `GET /albums/:id` → 404, `GET /albums/:id/images` → 404, `DELETE /images/:id` → 403; `/media/:key` de un privado sin firma → 404 | ✅ Probado 2026-09-01 |

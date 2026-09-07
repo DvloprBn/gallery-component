@@ -68,7 +68,7 @@ export const gallerySchema = z.object({
     title: z.string(),
     description: z.string().nullable(),
     slug: z.string(),
-    layout: z.enum(['masonry', 'justified', 'grid', 'carousel']).catch('masonry'),
+    layout: z.enum(['masonry', 'justified', 'grid', 'carousel', 'book']).catch('masonry'),
     theme: themeSchema,
     visibility: z.enum(['public', 'unlisted', 'private']),
     mediaCount: z.number().int().nonnegative(),

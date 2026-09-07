@@ -2233,3 +2233,60 @@ de layouts del `README.md`.
   medición de CWV.
 
 Encaja después de la Fase 13 o antes — no depende de nada de pago ni del despliegue.
+
+## 25. Fase 15a — Layout "libro": plumbing + pliego estático (completada y verificada, 2026-09-07)
+
+Primer tramo de la Fase 15. Deja el layout `book` **funcionando de forma estática y accesible**
+(sin giro de página ni scroll fijo — llegan en 15b/15c), y sirve de base para lo demás.
+
+### 25.1 El valor `book` (6 sitios, sin migración)
+
+`albums.layout` ya es `String @db.VarChar(20)` → **no hay migración**. `'book'` se añadió en:
+`gallery_backend/src/albums/dto/album.dto.ts` (`ALBUM_LAYOUTS` → `@IsIn` lo recoge solo, un layout
+inválido sigue dando 400), `gallery_frontend/src/lib/gallery-schema.ts` (`z.enum`),
+`gallery_frontend/src/lib/studio-types.ts` (`LAYOUTS` + la unión de `AlbumRow.layout`),
+`GalleryLayout.tsx` (`SIZES_BY_LAYOUT`), `README.md`. El selector de layout de `AlbumSettingsForm`
+itera `LAYOUTS`, así que la opción aparece sin tocar el formulario.
+
+### 25.2 `BookLayout.tsx` (nuevo)
+
+`GalleryView` ramifica: `album.layout === 'book'` → `<BookLayout>`, si no → `<GalleryLayout>`. En
+modo libro la cabecera de la galería va **`g-header--slim`** (sin `<h1>` ni descripción — la portada
+del libro los lleva).
+
+- **Portada** (`g-book__cover`): kicker "Fotolibro" + título + descripción, con el color de acento
+  del `theme`.
+- **Pliegos** (`g-book__spread`): los medios se agrupan de dos en dos; cada hoja
+  (`g-book__page`) reutiliza **`GalleryImage`** (el mismo tile de siempre: `srcset`, BlurHash,
+  `loading="lazy"`, clic → `onOpen(index)` → `Lightbox`). Nº de medios impar → última hoja derecha
+  en blanco (`g-book__page--blank`). Número de folio por hoja. Un "lomo" central es una sombra CSS
+  (`::after`).
+- **Contraportada** (`g-book__back`): CTA a `/contacto` ("Solicitar una licencia").
+- **Móvil** (`≤ 700px`, solo CSS): una hoja por pantalla, sin lomo.
+
+Es **SSR puro, sin JS**: el markup del libro se pinta en el servidor. No hay animación que
+`prefers-reduced-motion` tenga que desactivar todavía — la caída a `grid` para reduced-motion / sin
+JS / fallo de librería entra en 15b, cuando ya haya giro de página.
+
+### 25.3 Bug propio corregido (500 → 400)
+
+Al probar con un PNG degenerado se descubrió que `ImagePipelineService.process` daba un **500** si
+un archivo pasaba `sharp().metadata()` (header legible) pero fallaba al re-codificarse
+(`vips2png: unable to write to target`). El re-encode del original estaba **fuera** del `try/catch`
+que ya convierte "no es una imagen" en 400. Ahora está dentro → **400 "La imagen está dañada o
+incompleta"**. Pre-existente desde la Fase 3, no lo introdujo la 15a. Test nuevo en
+`image-pipeline.service.spec.ts`.
+
+### 25.4 Verificación
+
+- `tsc` back + front limpios. **112 tests / 16 suites** (nuevo test del re-encode fallido).
+- `next build` producción OK.
+- **`verify-15a.mjs`** contra el backend + el frontend en vivo — **9/9**: `layout: 'flipbook'` →
+  400 (whitelist); crear álbum con `layout: 'book'` → ok; `GET /g/:slug` → `album.layout === 'book'`
+  con los 3 medios; el **SSR del frontend** (`GET :3051/g/:slug`) pinta `g-book__cover` con el
+  título, **2 pliegos** para 3 medios (con una hoja en blanco), la contraportada con el CTA a
+  `/contacto`, y la cabecera `g-header--slim`.
+
+> **No verificado en navegador real** (sin herramienta de browser): la apariencia del libro
+> estático (papel, lomo, folios, portada) no se comprobó visualmente; sí que el markup y las clases
+> se sirven y que el layout se selecciona por `album.layout`.

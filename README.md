@@ -17,7 +17,7 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
 - **Sitio público** con aspecto de portafolio: portada con hero, `/trabajo` (colecciones),
   `/sobre`, `/contacto` (formulario con honeypot). La identidad —nombre, declaración, texto de
   «Sobre», hero— la fija `site_settings` y se edita desde el gestor.
-- **Galería pública** con layouts configurables (masonry / justificado / grid / carrusel),
+- **Galería pública** con layouts configurables (masonry / justificado / grid / carrusel / **libro** — fotolibro que se hojea),
   imágenes responsivas y perezosas, lightbox y animaciones con presupuesto de rendimiento.
 - **Gestor del sitio** para el dueño: crear colecciones, subir y reordenar imágenes, elegir
   tema/layout, marcar "destacada" — todo configurable al crear, no "crear y luego editar" —,
@@ -146,8 +146,8 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-111 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
-pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb),
+112 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb/re-encode fallido),
 `video-pipeline.service.spec.ts` (integración con `ffmpeg`/`ffprobe`/`exiftool` reales: valida un
 MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview, escala una
 rendition e incrusta la marca, empaqueta HLS multi-calidad), dos

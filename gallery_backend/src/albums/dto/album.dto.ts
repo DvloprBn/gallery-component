@@ -13,7 +13,7 @@ import {
 /** Visibilidades válidas de un álbum. */
 export const ALBUM_VISIBILITIES = ['public', 'unlisted', 'private'] as const;
 /** Layouts válidos de un álbum. */
-export const ALBUM_LAYOUTS = ['masonry', 'justified', 'grid', 'carousel'] as const;
+export const ALBUM_LAYOUTS = ['masonry', 'justified', 'grid', 'carousel', 'book'] as const;
 
 /** `POST /albums` — todo se configura al crear, no "crear y luego editar". */
 export class CreateAlbumDto {
