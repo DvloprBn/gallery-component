@@ -228,6 +228,23 @@ validación es por contenido, no por extensión ni `Content-Type`. Aquí la auto
 
 ---
 
+## Bloque específico — Fotolibro de portada (`GET /showcase` — Fase 15e)
+
+Endpoint público nuevo que alimenta el fotolibro de la cabecera de `/trabajo` con elementos de
+**varias** colecciones a la vez. Mismos invariantes de exposición que `GET /g/:slug` para un
+álbum `public`.
+
+| # | Prueba | Qué valida | Estado |
+|---|---|---|---|
+| SH1 | Solo contenido **publicado** de colecciones **públicas** | `listShowcase` filtra `status:'published'` **y** `album.visibility:'public'` en la propia consulta. Un `draft`/`archived`, o cualquier medio de un álbum `unlisted`/`private`, nunca sale | ✅ Probado 2026-09-07 (`verify-showcase.mjs`: cada `mediaId` devuelto aparece en el `/g/:slug` —que solo lista publicadas— de alguna colección pública) + test unitario `media.service.spec.ts` |
+| SH2 | El original limpio nunca se expone (D9, invariante Fase 12) | reutiliza el helper `toPublicMedia(row, 'public')` → la rama de `urls.original` solo se activa con `visibility === 'private'`; para el showcase es siempre `'public'`. Ningún elemento (foto o video) trae `original` | ✅ Probado 2026-09-07 (`verify-showcase.mjs`: 0/20 con clave `original`) + test unitario |
+| SH3 | Video sin transcodificar no se filtra | un video marcado `published` cuyo transcode nunca terminó (sin `variants` y sin `hls_manifest_key`) se **descarta** — no se sirve una hoja rota. Una foto siempre tiene sus 4 derivados, así que el filtro solo cae sobre video a medias | ✅ Probado 2026-09-07 (test unitario; en la BD de dev había 1 así y desaparece del resultado) |
+| SH4 | Video servido en el showcase | los videos traen `urls.hls` (`master.m3u8` con marca incrustada) + el póster WebP + `preview` MP4 — igual que en `GET /g/:slug`; nunca el master | ✅ Probado 2026-09-07 (`verify-showcase.mjs`) |
+| SH5 | DoS / abuso | ruta bajo el `@Throttle({ limit: 2400, ttl: 60_000 })` de `MediaController` (igual que `/g/:slug` y `/galleries`); `limit` acotado a `[1, 48]` y la consulta a `take ≤ 120`; sin parámetros de usuario que lleguen a la BD sin sanear (`Math.trunc` + `Math.min/max`) | ✅ Revisado en código + test unitario (clamp) |
+| SH6 | Sin fuga de datos internos | `PublicMedia` no incluye `album_id`, IP, `status`, `sort_order` ni nada del dueño — solo lo que ya expone `GET /g/:slug` | ✅ Cubierto por diseño (misma proyección `toPublicMedia`) |
+
+---
+
 ## Checklist transversal (se responde revisando el código real, no en abstracto)
 
 - [ ] ¿`ALLOWED_ORIGINS`/CORS explícito, nunca `*`, en producción?

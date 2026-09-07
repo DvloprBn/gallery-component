@@ -102,7 +102,9 @@ nivel igual o superior al suyo.
   `PATCH /media/:id` (incluye `status` y `rights`) · `DELETE /media/:id` ·
   `GET /media/:id/processing` (estado del transcode de un video)
 - **Entrega pública**: `GET /galleries` (índice; `?featured=true` para las de portada) ·
-  `GET /g/:slug` (galería, solo contenido publicado) · `GET /media/:key` (archivos, driver de disco)
+  `GET /g/:slug` (galería, solo contenido publicado) · `GET /showcase` (fotolibro de portada de
+  `/trabajo`: 20 elementos recientes foto+video de todas las colecciones públicas) ·
+  `GET /media/:key` (archivos, driver de disco)
 - **Sitio**: `GET /site` (identidad pública, incluye marca de agua y derechos) ·
   `PATCH /site` (`admin`+) · `POST/DELETE /site/watermark` (logo, `admin`+) ·
   `POST/GET /site/watermark/regenerate` (regenerar en segundo plano, `admin`+) ·
@@ -146,11 +148,13 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-112 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+121 tests, 17 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb/re-encode fallido),
 `video-pipeline.service.spec.ts` (integración con `ffmpeg`/`ffprobe`/`exiftool` reales: valida un
 MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview, escala una
-rendition e incrusta la marca, empaqueta HLS multi-calidad), dos
+rendition e incrusta la marca, empaqueta HLS multi-calidad), `media.service.spec.ts` (`GET /showcase`:
+solo publicado de colecciones públicas, nunca el original, mezcla acotada de video, descarta video sin
+transcodificar), dos
 suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas), las
 unitarias de `SiteService` / `ContactService` / `ImagesService` / `LicensingService` (validación del hero publicado,
 honeypot, escape del correo, cambio de estado en bloque acotado al álbum, regeneración en segundo

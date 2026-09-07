@@ -27,6 +27,15 @@ export class MediaController {
   }
 
   @Public()
+  @Get('showcase')
+  @ApiOperation({
+    summary: 'Fotolibro de portada de /trabajo: 20 elementos recientes (foto + video) de todas las colecciones públicas',
+  })
+  showcase() {
+    return this.media.listShowcase();
+  }
+
+  @Public()
   @Get('g/:slug')
   @ApiOperation({ summary: 'Galería pública de un álbum (por slug)' })
   getGallery(

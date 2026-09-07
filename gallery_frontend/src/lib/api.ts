@@ -1,4 +1,10 @@
-import { gallerySchema, type Gallery } from './gallery-schema';
+import { z } from 'zod';
+import {
+  galleryMediaSchema,
+  gallerySchema,
+  type Gallery,
+  type GalleryMedia,
+} from './gallery-schema';
 
 /**
  * URL base de la API para peticiones desde el SERVIDOR (Server Components).
@@ -69,6 +75,29 @@ export async function fetchPublicGalleries(
     if (!response.ok) return [];
     const data: unknown = await response.json();
     return Array.isArray(data) ? (data as PublicGalleryCard[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Esquema de `GET /showcase`: un arreglo de elementos, mismo formato que la galería. */
+const showcaseSchema = z.array(galleryMediaSchema);
+
+/**
+ * Pide el fotolibro de portada de `/trabajo`: hasta 20 elementos recientes
+ * (foto + video) de todas las colecciones públicas.
+ *
+ * @returns La lista validada (vacía si no hay contenido o si la API falla — el
+ *          fotolibro no debe tumbar la página de Trabajo).
+ */
+export async function fetchShowcase(): Promise<GalleryMedia[]> {
+  try {
+    const response = await fetch(`${serverApiBase()}/showcase`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) return [];
+    const parsed = showcaseSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : [];
   } catch {
     return [];
   }

@@ -1237,6 +1237,21 @@ button.danger:not(.link-button):hover:not(:disabled) {
   }
 }
 
+/* ── Fotolibro de portada en /trabajo (Fase 15e) ──────────────────────────
+   Reusa `BookLayout` en modo "libro". Aquí hay una `.site-header` sticky, así
+   que la escena fijada arranca debajo de ella (si no, quedaría tapada). */
+.pf-showcase {
+  --site-header-h: 3.25rem;
+  margin: clamp(1rem, 4vw, 2.5rem) 0 clamp(2.5rem, 8vw, 5rem);
+}
+
+@media (min-width: 701px) and (prefers-reduced-motion: no-preference) {
+  .pf-showcase .g-book__stage {
+    top: var(--site-header-h);
+    min-height: calc(100vh - var(--site-header-h));
+  }
+}
+
 .g-book__flip {
   width: 100%;
   max-width: 1120px;

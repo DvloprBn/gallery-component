@@ -2465,6 +2465,76 @@ de ir a sangre. El folio y el botón transparente (`.g-book__leaf-btn`, `inset: 
 | 15b — pase de página con `page-flip` | ✅ construida (no verificada en navegador) |
 | 15c — scroll fijo + teclado | ✅ construida (no verificada en navegador) |
 | 15d — pulido (portada, video, CTA, a11y) | ✅ construida (SSR verificado) |
+| 15e — fotolibro de portada en `/trabajo` | ✅ construida (API + SSR verificados) |
 
 **Fase 15 completa.** Pendiente transversal: medición de Core Web Vitals y prueba visual del
 pase de página en un navegador real.
+
+---
+
+## 29. Fase 15e — Fotolibro de portada en `/trabajo` (`GET /showcase`) (construida, 2026-09-07)
+
+Añadido a pedido del dueño: montar el fotolibro de la Fase 15 en la cabecera de la página
+**Trabajo**, con 20 elementos (foto + video) sacados de **todas** las colecciones públicas —
+no de un solo álbum. Es la primera vez que `BookLayout` se usa fuera de `/g/:slug`.
+
+### 29.1 Backend — `GET /showcase`
+
+Ruta pública nueva en `MediaController` (bajo el mismo `@Throttle({ 2400, 60s })` de la clase —
+una página de galería pide muchos objetos a la vez). `MediaService.listShowcase(limit = 20)`:
+
+- **Consulta**: `media` con `status = 'published'` **y** `album.visibility = 'public'`,
+  `orderBy: created_at desc`, `take: min(limit*3, 120)` (se pide de más para tener de dónde
+  sacar la cuota de videos aunque estén lejos por fecha), `include: { variants: true }`.
+- **Filtro de media rota**: se descartan las filas sin `variants` **y** sin `hls_manifest_key`
+  — un video marcado `published` cuyo transcode nunca terminó no tiene nada que enseñar (una
+  foto siempre trae sus 4 derivados, así que esto solo cae sobre video a medias). *(Nota: en
+  la BD de dev había exactamente uno así — `getGallery` sigue devolviéndolo en la página de su
+  álbum; ese saneo más amplio queda fuera del alcance de la 15e.)*
+- **Mezcla**: hasta `SHOWCASE_MAX_VIDEOS = 4` videos (los más nuevos) + el resto fotos, y luego
+  `interleave()` los reparte parejo (`step = total / (nVideos + 1)`, redondeo) para que el
+  libro **alterne** en vez de amontonar los videos al inicio. Con los datos actuales: 2 videos
+  servibles en las posiciones ~6 y ~12 de 20.
+- **Proyección**: se extrajo el mapeo fila→`PublicMedia` de `getGallery` a un helper privado
+  `toPublicMedia(row, visibility)`. Para el showcase la visibilidad es siempre `'public'` →
+  **nunca** se incluye `urls.original` (D9, invariante de la Fase 12), y los videos traen
+  `urls.hls` (`master.m3u8`) + el póster WebP + `preview` MP4 de respaldo.
+- Devuelve `PublicMedia[]` directo (no envuelto en un objeto álbum — no hay álbum).
+
+### 29.2 Frontend
+
+- **`lib/api.ts`** `fetchShowcase()`: `GET /showcase`, valida con
+  `z.array(galleryMediaSchema)` (`safeParse` → `[]` si falla); un fallo nunca tumba `/trabajo`.
+- **`components/ShowcaseBook.tsx`** (nuevo, cliente): arma una `Gallery` **sintética**
+  (`album.title` = nombre del sitio, `description: null`, `slug: ''`, `layout: 'book'`,
+  `theme: {}`, `visibility: 'public'`) y monta `<BookLayout onOpen>` + `<Lightbox>` — la misma
+  unión que hace `GalleryView` para un álbum. El clic en una hoja abre el lightbox in situ
+  (con HLS para los videos), no navega.
+- **`app/trabajo/page.tsx`**: añade `fetchShowcase()` al `Promise.all`; conserva el
+  `<h1 class="pf-page__title">Trabajo</h1>` + tagline (SEO/accesibilidad), pinta
+  `<ShowcaseBook>` justo debajo si hay elementos, y deja intacta la rejilla de colecciones.
+- **CSS** — bloque `.pf-showcase` nuevo: como en `/trabajo` hay una `.site-header` **sticky**,
+  la escena fijada del libro (`.g-book__stage`, `position: sticky; top: 0` desde la 15c)
+  arrancaría tapada; se le da `top: var(--site-header-h, 3.25rem)` y se le resta esa altura al
+  `min-height`. Solo dentro de `@media (min-width: 701px) and (prefers-reduced-motion:
+  no-preference)` — mismo criterio de pin que la 15c. Ningún estilo de la Fase 15 se tocó.
+
+### 29.3 Verificación
+
+- Backend: `tsc` limpio; **121 tests / 17 suites** (nuevo `media.service.spec.ts`, 10 tests:
+  consulta correcta, nunca `original`, tope 20, cuota de 4 videos, intercalado, HLS en video,
+  clamp de `limit`, descarta video roto, funciona sin videos).
+- Frontend: `tsc` limpio; `next build` producción OK (16 rutas).
+- `verify-showcase.mjs` **20/20** en vivo: `GET /showcase` → 20 elementos, mezcla foto+video,
+  ≤4 videos, videos intercalados (no al inicio), **cero `urls.original`**, cada elemento con
+  algo servible, videos con `hls`+`durationMs`; **cross-check**: cada `mediaId` del showcase
+  aparece en el `/g/:slug` (que solo lista publicadas) de alguna colección pública. SSR de
+  `/trabajo`: `<h1>` compacto, `.pf-showcase`, portada del libro + `role="region"`, 20
+  `g-book__page` en 10 pliegos (modo `static` del SSR), contraportada con CTA, y la rejilla
+  `pf-grid` sigue debajo.
+
+> **No verificado en navegador real** (sin herramienta de browser), igual que el resto de la
+> Fase 15: que el libro se hojee, que la cabecera se fije y el scroll pase las páginas dentro
+> de `/trabajo` con la `.site-header` sticky de por medio, el lightbox, y Core Web Vitals de
+> la página con el libro embebido. El SSR (fotolibro plano) y el contrato de la API sí están
+> comprobados.

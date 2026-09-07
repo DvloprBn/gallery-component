@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { fetchPublicGalleries, fetchSite } from '@/lib/api';
+import { fetchPublicGalleries, fetchShowcase, fetchSite } from '@/lib/api';
+import { ShowcaseBook } from '@/components/ShowcaseBook';
 
 /** Datos en vivo — no se prerenderiza en build. */
 export const dynamic = 'force-dynamic';
@@ -15,9 +16,10 @@ export const metadata: Metadata = {
  * gestor (`sort_order`). Cada tarjeta lleva a `/g/<slug>`.
  */
 export default async function TrabajoPage() {
-  const [site, collections] = await Promise.all([
+  const [site, collections, showcase] = await Promise.all([
     fetchSite(),
     fetchPublicGalleries(false),
+    fetchShowcase(),
   ]);
 
   return (
@@ -28,6 +30,10 @@ export default async function TrabajoPage() {
           <p className="pf-page__lead">{site.tagline}</p>
         ) : null}
       </header>
+
+      {showcase.length > 0 ? (
+        <ShowcaseBook media={showcase} title={site?.siteTitle ?? 'Trabajo'} />
+      ) : null}
 
       {collections.length === 0 ? (
         <p className="muted">Todavía no hay colecciones publicadas.</p>

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import type {
@@ -45,6 +46,15 @@ export interface PublicGallery {
   };
   media: PublicMedia[];
 }
+
+/** Una fila de `media` con sus derivados — lo que consume `toPublicMedia`. */
+type MediaWithVariants = Prisma.mediaGetPayload<{ include: { variants: true } }>;
+
+/** Cuántos elementos devuelve `GET /showcase` (el fotolibro de `/trabajo`). */
+export const SHOWCASE_LIMIT = 20;
+
+/** Tope de videos dentro del `showcase` — el resto son fotos. */
+const SHOWCASE_MAX_VIDEOS = 4;
 
 /**
  * Ensamblado de la galería pública y servido de archivos por el driver de
@@ -170,43 +180,136 @@ export class MediaService {
         visibility,
         mediaCount: rows.length,
       },
-      media: rows.map((m) => ({
-        mediaId: m.media_id,
-        kind: m.kind,
-        width: m.width,
-        height: m.height,
-        durationMs: m.duration_ms ?? null,
-        placeholder: m.placeholder,
-        altText: m.alt_text,
-        caption: m.caption,
-        urls: {
-          // El original/master de alta resolución (limpio, sin marca — D9)
-          // NUNCA se ofrece en una galería `public`/`unlisted`: sería regalar
-          // exactamente lo que la Fase 12 vende con licencia. Un álbum
-          // `private` sigue incluyéndolo — un enlace de compartir implica que
-          // el dueño ya confió el original a ese visitante concreto.
-          ...(visibility === 'private' && m.storage_key
-            ? { original: this.storage.urlFor(m.storage_key, visibility) }
-            : {}),
-          // `hls` = el master.m3u8 (Fase 14c) — reproducción adaptativa; el
-          // `preview` MP4 sigue como respaldo para navegadores sin `hls.js`.
-          ...(m.hls_manifest_key
-            ? {
-                hls: this.storage.urlFor(
-                  m.hls_manifest_key,
-                  visibility,
-                  HLS_URL_TTL,
-                ),
-              }
-            : {}),
-          ...Object.fromEntries(
-            m.variants.map((v) => [
-              v.label,
-              this.storage.urlFor(v.storage_key, visibility),
-            ]),
-          ),
-        },
-      })),
+      media: rows.map((m) => this.toPublicMedia(m, visibility)),
+    };
+  }
+
+  /**
+   * Fotolibro de `/trabajo` (Fase 15e): los elementos publicados más recientes
+   * de **todas** las colecciones `public`, mezclando foto y video. El original
+   * de alta resolución nunca se incluye (D9) — igual que en `getGallery` para
+   * un álbum `public`.
+   *
+   * La mezcla es deliberada: se toman hasta {@link SHOWCASE_MAX_VIDEOS} videos
+   * (los más nuevos) y el resto fotos, y luego se **intercalan** para que el
+   * libro alterne en vez de amontonar los videos al inicio.
+   *
+   * @param limit - Cuántos elementos devolver (1–48; por defecto {@link SHOWCASE_LIMIT}).
+   * @returns Los elementos ya en orden de hojeo, con sus URLs de entrega.
+   */
+  async listShowcase(limit: number = SHOWCASE_LIMIT): Promise<PublicMedia[]> {
+    const take = Math.min(Math.max(Math.trunc(limit) || SHOWCASE_LIMIT, 1), 48);
+
+    // Se pide de más (`take * 3`, con tope) para tener de dónde escoger la
+    // cuota de videos aunque queden lejos en la lista por fecha.
+    const rows = await this.prisma.media.findMany({
+      where: {
+        status: 'published',
+        album: { visibility: 'public' },
+      },
+      orderBy: { created_at: 'desc' },
+      take: Math.min(take * 3, 120),
+      include: { variants: true },
+    });
+
+    // Un video marcado `published` pero cuyo transcode nunca terminó no tiene
+    // derivados ni HLS — no hay nada que enseñar, así que fuera del fotolibro
+    // (una foto siempre tiene sus 4 derivados; esto solo descarta media rota).
+    const showable = rows.filter(
+      (m) => m.variants.length > 0 || m.hls_manifest_key,
+    );
+    const videos = showable.filter((m) => m.kind === 'video');
+    const photos = showable.filter((m) => m.kind === 'photo');
+
+    const pickedVideos = videos.slice(0, Math.min(SHOWCASE_MAX_VIDEOS, take));
+    const pickedPhotos = photos.slice(0, take - pickedVideos.length);
+
+    return this.interleave(pickedPhotos, pickedVideos).map((m) =>
+      this.toPublicMedia(m, 'public'),
+    );
+  }
+
+  /**
+   * Reparte `videos` de forma pareja dentro de `photos` conservando el orden
+   * relativo de cada grupo. Con 3 videos y 17 fotos, los videos caen ~cada 5
+   * hojas en vez de todos al principio.
+   *
+   * @param photos - Las fotos, ya ordenadas.
+   * @param videos - Los videos, ya ordenados.
+   * @returns Un único arreglo intercalado (longitud = `photos.length + videos.length`).
+   */
+  private interleave<T>(photos: T[], videos: T[]): T[] {
+    if (videos.length === 0) return photos;
+    if (photos.length === 0) return videos;
+
+    const total = photos.length + videos.length;
+    const step = total / (videos.length + 1); // hueco entre videos
+    const out: T[] = [];
+    let vi = 0;
+    let pi = 0;
+    for (let i = 0; i < total; i++) {
+      const isVideoSlot =
+        vi < videos.length && i >= Math.round((vi + 1) * step) - 1;
+      if (isVideoSlot) {
+        out.push(videos[vi++]);
+      } else if (pi < photos.length) {
+        out.push(photos[pi++]);
+      } else {
+        out.push(videos[vi++]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Proyecta una fila de `media` (con sus derivados) a la forma pública.
+   *
+   * @param m - La fila con `variants` incluidos.
+   * @param visibility - Visibilidad del álbum dueño: decide si se expone el
+   *        original limpio (`original`, solo `private` — D9) y el TTL de las
+   *        URLs firmadas del HLS.
+   * @returns El elemento listo para la galería / el fotolibro.
+   */
+  private toPublicMedia(
+    m: MediaWithVariants,
+    visibility: MediaVisibility,
+  ): PublicMedia {
+    return {
+      mediaId: m.media_id,
+      kind: m.kind,
+      width: m.width,
+      height: m.height,
+      durationMs: m.duration_ms ?? null,
+      placeholder: m.placeholder,
+      altText: m.alt_text,
+      caption: m.caption,
+      urls: {
+        // El original/master de alta resolución (limpio, sin marca — D9)
+        // NUNCA se ofrece en una galería `public`/`unlisted`: sería regalar
+        // exactamente lo que la Fase 12 vende con licencia. Un álbum
+        // `private` sigue incluyéndolo — un enlace de compartir implica que
+        // el dueño ya confió el original a ese visitante concreto.
+        ...(visibility === 'private' && m.storage_key
+          ? { original: this.storage.urlFor(m.storage_key, visibility) }
+          : {}),
+        // `hls` = el master.m3u8 (Fase 14c) — reproducción adaptativa; el
+        // `preview` MP4 sigue como respaldo para navegadores sin `hls.js`.
+        ...(m.hls_manifest_key
+          ? {
+              hls: this.storage.urlFor(
+                m.hls_manifest_key,
+                visibility,
+                HLS_URL_TTL,
+              ),
+            }
+          : {}),
+        ...Object.fromEntries(
+          m.variants.map((v) => [
+            v.label,
+            this.storage.urlFor(v.storage_key, visibility),
+          ]),
+        ),
+      },
     };
   }
 
