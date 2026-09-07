@@ -2466,9 +2466,11 @@ de ir a sangre. El folio y el botón transparente (`.g-book__leaf-btn`, `inset: 
 | 15c — scroll fijo + teclado | ✅ construida (no verificada en navegador) |
 | 15d — pulido (portada, video, CTA, a11y) | ✅ construida (SSR verificado) |
 | 15e — fotolibro de portada en `/trabajo` | ✅ construida (API + SSR verificados) |
+| 15f — arreglo del ciclado scroll↔giro + cuerpo de libro (CSS) | ✅ construida (SSR verificado; interacción sin navegador) |
 
 **Fase 15 completa.** Pendiente transversal: medición de Core Web Vitals y prueba visual del
-pase de página en un navegador real.
+pase de página / del arreglo del ciclado en un navegador real. El libro three.js queda como
+proyecto propio (ver §30.3).
 
 ---
 
@@ -2538,3 +2540,95 @@ una página de galería pide muchos objetos a la vez). `MediaService.listShowcas
 > de `/trabajo` con la `.site-header` sticky de por medio, el lightbox, y Core Web Vitals de
 > la página con el libro embebido. El SSR (fotolibro plano) y el contrato de la API sí están
 > comprobados.
+
+---
+
+## 30. Fase 15f — Fotolibro: arreglo del ciclado + forma de libro (construida, 2026-09-07)
+
+A pedido del dueño, tras revisar el efecto en pantalla: **"avanza pero se regresa y luego se
+cicla y se reestablece"**, y **"dale más forma de libro"** (conservando el pase de hoja de
+`page-flip`, que le gusta). Esta sub-fase corrige el lazo de sincronía y le pone un cuerpo de
+libro alrededor. **Sigue siendo `page-flip` (CSS)** — la reescritura en three.js/WebGL se
+evaluó y se deja como proyecto propio (ver más abajo).
+
+### 30.1 El bug del ciclado (scroll ↔ giro)
+
+**Causa raíz** (en `BookLayout.tsx`, la lógica de la 15c): al pasar página, el handler movía
+el scroll con `window.scrollTo({ behavior: 'smooth' })`. Ese scroll suave dispara **decenas**
+de eventos `scroll` durante ~400 ms; el listener `onScroll` recalculaba un `target` a partir
+de un progreso que todavía no había llegado y **volvía a llamar `instance.flip()`** — a veces
+a la página anterior — antes de que el giro en curso terminara. El guardia `fromScroll.active`
+era un único booleano que se apagaba en el primer evento `flip`, así que no cubría toda la
+ventana del scroll suave. Con el `Math.round(progress)` oscilando entre N y N+1 al soltar
+entre dos páginas, el resultado era "avanza, regresa, se cicla, se reestablece".
+
+**La cura** (sin cambiar de librería):
+
+1. **Mientras la sección está fija, el scroll es la única fuente de verdad** — la página es
+   función del progreso de scroll, en un solo sentido.
+2. Los giros del **usuario** (arrastre / botón / teclado) alinean el scroll a la página nueva
+   de forma **instantánea** (`behavior: 'auto'`, no `'smooth'`) y con una **ventana de
+   silencio** (`suppressUntil = now + 400 ms`, más `scrollend` donde exista) durante la cual
+   `onScroll` no dispara giros — así el propio `scrollTo` no reengancha el lazo.
+3. **Nunca se llama `flip()` mientras `page-flip` está animando.** Se escucha su evento
+   `changeState`: `busy = (data === 'flipping' || data === 'user_fold')`. Un `'user_fold'`
+   (arrastre real iniciado por el usuario) además marca `userFlipRef` para acompañarlo con el
+   scroll; un `flip()` que pedimos nosotros desde el scroll solo pasa por `'flipping'`, así
+   que **no** se auto-alinea (el scroll ya está donde toca).
+4. **Snap al detenerse**: 160 ms después del último evento `scroll`, si no está animando y no
+   hay silencio activo, se asienta el scroll **exactamente** sobre la página actual
+   (`offsetForPage(getCurrentPageIndex())`) con un umbral de 4 px — nunca queda a medio camino
+   entre dos páginas.
+
+`userFlipRef` es un `useRef` a nivel de componente: los botones ‹ › y el teclado lo ponen en
+`true` antes de llamar `flipNext/Prev`; el `flip` lo lee y lo baja.
+
+### 30.2 Cuerpo de libro (CSS, decorativo)
+
+`BookLayout` (modo `flip`) envuelve el host de `page-flip` en `.g-book__body` con cuatro
+elementos `aria-hidden` **detrás** de las hojas:
+
+- **`.g-book__board--l` / `--r`** — tapas, un 2,6 % más grandes que el bloque de hojas,
+  material oscuro (`color-mix` sobre `--g-fg`/`#000`), con `rotateY(±1.1deg)` para "abrir"
+  el libro hacia el lector (bajo `perspective: 2600px` en `.g-book__body`).
+- **`.g-book__spine`** — banda vertical hundida en la canal, con degradado de luz al centro.
+- **`.g-book__body::before` / `::after`** — el **canto de páginas**: dos tacos de hojas
+  apiladas (`repeating-linear-gradient`) en el borde **exterior** de cada lado; el izquierdo
+  (lo ya leído) **crece** y el derecho (lo que falta) **encoge** según `--book-page` /
+  `--book-count`, que `BookLayout` pasa como estilo inline y actualiza en cada `flip`.
+- **`.g-book__shadow`** — sombra radial en el suelo para asentar el libro.
+
+`.g-book__flip` pasa de `contain: layout paint` → `contain: layout style` (el `paint`
+recortaría la esquina que se despega y las sombras); el `max-width: 1120px` se movió a
+`.g-book__body`. `page-flip`: `maxShadowOpacity` 0.5 → 0.65, `flippingTime` 700 → 750,
+`showPageCorners: true` explícito (esquina que se despega al pasar el ratón). Las hojas
+(`.g-book__leaf`) ganan una veladura sutil de papel (dos `linear-gradient` tenues sobre
+`--book-paper`).
+
+El modo `static` (SSR / sin JS) **no cambió** — sigue siendo el fotolibro plano de pliegos.
+
+### 30.3 Por qué no three.js (todavía)
+
+Se evaluó reescribir la animación en WebGL (three.js u OGL). `three.js` **es** una librería de
+WebGL, no una alternativa a él. Un libro WebGL sí puede acercarse mucho más al objeto real
+(doblez de la hoja como papel, grosor real, luz que reacciona al pliegue, traslucidez), pero:
+sería la **2ª librería de UI** del proyecto y pesa en el presupuesto de CWV de la portada; las
+páginas pasan a ser **texturas de un `<canvas>`**, no `<img>` del DOM → se pierde
+`srcset`/lazy/SEO/`<figcaption>` y todo el pipeline de media deja de aplicar; y **no hay
+navegador en este entorno** para verificar una escena WebGL a medida. Decisión: el pase actual
+se deja sólido con CSS; el libro three.js queda como **proyecto propio** (un sitio artístico
+inmersivo montado sobre la obra real del artista), donde el costo de WebGL es el punto y no un
+impuesto. La capa WebGL reutilizable se construiría ahí, con propósito.
+
+### 30.4 Verificación
+
+- `tsc` front limpio; `next build` producción OK (16 rutas). Backend sin cambios (**121 tests
+  / 17 suites**). `verify-15a.mjs` **14/14** y `verify-showcase.mjs` **20/20** — el SSR
+  (fotolibro plano) no cambió.
+
+> **No verificado en navegador real** (sin herramienta de browser): que el ciclado esté
+> efectivamente curado (scroll ↔ giro, snap al detenerse, alineado tras arrastre/botón/tecla),
+> y cómo se ve el cuerpo de libro (tapas, lomo, canto, sombra, perspectiva). La lógica sigue
+> el modelo descrito y los eventos reales de `page-flip` (`changeState` con
+> `read`/`user_fold`/`flipping`/`fold_corner`, confirmados leyendo el bundle), pero su
+> comportamiento en pantalla está sin comprobar — lo confirma el dueño.

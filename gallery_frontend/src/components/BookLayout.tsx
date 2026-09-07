@@ -56,6 +56,10 @@ export function BookLayout({
   const hostRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const flipRef = useRef<PageFlip | null>(null);
+  // `true` cuando el próximo giro lo pidió el usuario (arrastre / botón /
+  // teclado) y no el scroll — el efecto lo usa para alinear el scroll a la
+  // página nueva sin entrar en el lazo scroll↔giro. Lo lee y lo baja el `flip`.
+  const userFlipRef = useRef(false);
 
   // (1) Decidir: menos movimiento → `grid`; si no, intentar `flip`.
   useEffect(() => {
@@ -99,10 +103,11 @@ export function BookLayout({
           maxWidth: 720,
           minHeight: 380,
           maxHeight: 1000,
-          maxShadowOpacity: 0.5,
+          maxShadowOpacity: 0.65,
           drawShadow: true,
-          flippingTime: 700,
+          flippingTime: 750,
           showCover: true,
+          showPageCorners: true, // esquina que se despega al pasar el ratón
           mobileScrollSupport: true,
           // El clic NO pasa página (eso es arrastre + botones); así un toque
           // sobre la hoja abre el lightbox sin ambigüedad.
@@ -124,17 +129,33 @@ export function BookLayout({
         });
         ro.observe(hostRef.current);
 
-        // ── Scroll fijo: la sección se queda pegada y el progreso de scroll
-        //    pasa las páginas. Solo en escritorio y sin `prefers-reduced-motion`
-        //    (en móvil el pin pelea con el scroll nativo). ──
+        // ── Scroll fijo ↔ pase de página ─────────────────────────────────
+        //  El bug de "avanza y se cicla" era un lazo: al pasar página el
+        //  handler movía el scroll con `behavior:'smooth'`, ese scroll suave
+        //  disparaba decenas de eventos `scroll`, y esos re-disparaban `flip()`
+        //  antes de que el anterior terminara. La cura, sin cambiar de
+        //  librería:
+        //   (1) mientras la sección está fija, el scroll es la ÚNICA fuente
+        //       de verdad — la página es función del progreso de scroll;
+        //   (2) los giros del usuario (arrastre/botón/teclado) alinean el
+        //       scroll a la página nueva de forma INSTANTÁNEA (`behavior:'auto'`)
+        //       y con una ventana de silencio, para que ese `scrollTo` no
+        //       vuelva a disparar un giro;
+        //   (3) nunca se llama `flip()` mientras `page-flip` está animando
+        //       (`changeState` = `flipping`/`user_fold`);
+        //   (4) al parar el scroll, se "asienta" exactamente sobre una página
+        //       (nunca a medio camino, que es lo que hacía oscilar el
+        //       `Math.round`).
         const pinnable = () =>
           window.matchMedia('(min-width: 701px)').matches &&
           window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
 
         let raf = 0;
         let pinned = false;
-        const fromScroll = { active: false };
-        let lastTarget = -1;
+        let busy = false; // page-flip animando (o el usuario arrastrando)
+        let lastTarget = instance.getCurrentPageIndex();
+        let suppressUntil = 0; // ignora scroll→giro hasta este instante
+        let snapTimer = 0;
 
         const eagerAround = (idx: number) => {
           const imgs = host.querySelectorAll<HTMLImageElement>('.g-book__leaf img');
@@ -144,26 +165,57 @@ export function BookLayout({
           }
         };
 
-        const scrollToPage = (p: number) => {
+        /** Posición de scroll que corresponde a ver la página `p`. */
+        const offsetForPage = (p: number) => {
           const track = trackRef.current;
-          if (!track) return;
-          const total = track.offsetHeight - window.innerHeight;
+          if (!track) return 0;
+          const span = track.offsetHeight - window.innerHeight;
           const frac = count > 1 ? p / (count - 1) : 0;
-          window.scrollTo({
-            top: track.offsetTop + Math.max(0, frac * total),
-            behavior: 'smooth',
-          });
+          return track.offsetTop + Math.max(0, Math.min(span, frac * span));
         };
+
+        /** Alinea el scroll a `p` sin animación y silencia el sync un momento. */
+        const syncScrollTo = (p: number) => {
+          if (!pinnable()) return;
+          suppressUntil = performance.now() + 400;
+          window.scrollTo({ top: offsetForPage(p), behavior: 'auto' });
+        };
+
+        /** Al quedarse quieto el scroll, asienta sobre la página exacta. */
+        const scheduleSnap = () => {
+          window.clearTimeout(snapTimer);
+          snapTimer = window.setTimeout(() => {
+            if (!pinnable() || busy || performance.now() < suppressUntil) return;
+            const p = instance!.getCurrentPageIndex();
+            const want = offsetForPage(p);
+            if (Math.abs(window.scrollY - want) > 4) {
+              suppressUntil = performance.now() + 400;
+              window.scrollTo({ top: want, behavior: 'auto' });
+            }
+          }, 160);
+        };
+
+        onChangeState = (e: { data: unknown }) => {
+          const s = e.data;
+          busy = s === 'flipping' || s === 'user_fold';
+          // Un arrastre real lo empieza el usuario → el `flip` que venga hay
+          // que acompañarlo moviendo el scroll.
+          if (s === 'user_fold') userFlipRef.current = true;
+        };
+        instance.on('changeState', onChangeState);
 
         onFlip = (e: { data: unknown }) => {
           const p =
             typeof e.data === 'number' ? e.data : instance!.getCurrentPageIndex();
+          lastTarget = p;
           setPage(p);
           eagerAround(p);
-          // Si la página la pasó el usuario (arrastre / botón / teclado), mueve
-          // el scroll para que no "regrese" al soltar.
-          if (!fromScroll.active && pinnable()) scrollToPage(p);
-          fromScroll.active = false;
+          // Giro del usuario (arrastre/botón/teclado) → alinea el scroll a la
+          // página nueva. Giro pedido por el scroll → el scroll ya está ahí.
+          if (userFlipRef.current) {
+            userFlipRef.current = false;
+            syncScrollTo(p);
+          }
         };
         instance.on('flip', onFlip);
 
@@ -171,47 +223,58 @@ export function BookLayout({
           if (raf) return;
           raf = requestAnimationFrame(() => {
             raf = 0;
+            if (!pinnable()) return;
             const track = trackRef.current;
-            if (!track || !pinnable()) return;
+            if (!track) return;
             const rect = track.getBoundingClientRect();
             const vh = window.innerHeight;
             pinned = rect.top <= 0 && rect.bottom >= vh;
-            if (!pinned) return;
-            const progress = Math.min(
-              1,
-              Math.max(0, -rect.top / (rect.height - vh)),
-            );
+            scheduleSnap();
+            if (!pinned || busy) return;
+            if (performance.now() < suppressUntil) return; // scrollTo nuestro
+            const denom = rect.height - vh;
+            if (denom <= 0) return;
+            const progress = Math.min(1, Math.max(0, -rect.top / denom));
             const target = Math.round(progress * (count - 1));
             if (
               target !== lastTarget &&
               target !== instance!.getCurrentPageIndex()
             ) {
               lastTarget = target;
-              fromScroll.active = true;
+              userFlipRef.current = false; // lo pide el scroll, no el usuario
               try {
                 instance!.flip(target);
               } catch {
-                fromScroll.active = false;
+                /* noop */
               }
             }
           });
         };
         window.addEventListener('scroll', onScroll, { passive: true });
 
+        // `scrollend` (Chrome/Firefox) levanta el silencio antes del timeout.
+        onScrollEnd = () => {
+          suppressUntil = 0;
+        };
+        window.addEventListener('scrollend', onScrollEnd);
+
         onKey = (ev: KeyboardEvent) => {
           if (!pinned || !pinnable()) return;
           if (document.querySelector('.g-lightbox.is-open')) return;
           if (['ArrowRight', 'ArrowDown', 'PageDown'].includes(ev.key)) {
             ev.preventDefault();
+            userFlipRef.current = true;
             instance!.flipNext();
           } else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(ev.key)) {
             ev.preventDefault();
+            userFlipRef.current = true;
             instance!.flipPrev();
           }
         };
         window.addEventListener('keydown', onKey);
         cleanupRaf = () => {
           if (raf) cancelAnimationFrame(raf);
+          window.clearTimeout(snapTimer);
         };
       } catch {
         if (!cancelled) setMode('grid');
@@ -219,8 +282,10 @@ export function BookLayout({
     };
 
     let onScroll: (() => void) | null = null;
+    let onScrollEnd: (() => void) | null = null;
     let onKey: ((ev: KeyboardEvent) => void) | null = null;
     let onFlip: ((e: { data: unknown }) => void) | null = null;
+    let onChangeState: ((e: { data: unknown }) => void) | null = null;
     let cleanupRaf: (() => void) | null = null;
     void start();
 
@@ -228,6 +293,7 @@ export function BookLayout({
       cancelled = true;
       ro?.disconnect();
       if (onScroll) window.removeEventListener('scroll', onScroll);
+      if (onScrollEnd) window.removeEventListener('scrollend', onScrollEnd);
       if (onKey) window.removeEventListener('keydown', onKey);
       cleanupRaf?.();
       try {
@@ -295,27 +361,47 @@ export function BookLayout({
             shownLeaves,
           )} de ${shownLeaves}.`}
         >
-          <div className="g-book__flip" ref={hostRef}>
-            <div className="g-book__leaf g-book__leaf--cover" data-density="hard">
-              <BookCover album={album} bg={coverBg} count={media.length} />
-            </div>
-            {media.map((m, i) => (
-              <div className="g-book__leaf" key={m.mediaId}>
-                <span className="g-book__folio">{i + 1}</span>
-                <GalleryImage media={m} sizes={PAGE_SIZES} priority={i < 2} />
-                <button
-                  type="button"
-                  className="g-book__leaf-btn"
-                  aria-label="Ver ampliada"
-                  onClick={() => onOpen(i)}
-                />
+          {/* Cuerpo del libro: tapas, lomo, canto y sombra alrededor de
+              `page-flip` — todo decorativo. `--book-page` / `--book-count`
+              mueven el grosor de cada taco de hojas según por dónde vas. */}
+          <div
+            className="g-book__body"
+            style={
+              {
+                '--book-page': Math.min(page, shownLeaves),
+                '--book-count': shownLeaves,
+              } as React.CSSProperties
+            }
+          >
+            <span className="g-book__board g-book__board--l" aria-hidden="true" />
+            <span className="g-book__board g-book__board--r" aria-hidden="true" />
+            <span className="g-book__spine" aria-hidden="true" />
+            <span className="g-book__shadow" aria-hidden="true" />
+            <div className="g-book__flip" ref={hostRef}>
+              <div className="g-book__leaf g-book__leaf--cover" data-density="hard">
+                <BookCover album={album} bg={coverBg} count={media.length} />
               </div>
-            ))}
-            {needsBlank ? (
-              <div className="g-book__leaf g-book__leaf--blank" aria-hidden="true" />
-            ) : null}
-            <div className="g-book__leaf g-book__leaf--cover" data-density="hard">
-              <BookBack />
+              {media.map((m, i) => (
+                <div className="g-book__leaf" key={m.mediaId}>
+                  <span className="g-book__folio">{i + 1}</span>
+                  <GalleryImage media={m} sizes={PAGE_SIZES} priority={i < 2} />
+                  <button
+                    type="button"
+                    className="g-book__leaf-btn"
+                    aria-label="Ver ampliada"
+                    onClick={() => onOpen(i)}
+                  />
+                </div>
+              ))}
+              {needsBlank ? (
+                <div
+                  className="g-book__leaf g-book__leaf--blank"
+                  aria-hidden="true"
+                />
+              ) : null}
+              <div className="g-book__leaf g-book__leaf--cover" data-density="hard">
+                <BookBack />
+              </div>
             </div>
           </div>
 
@@ -324,7 +410,10 @@ export function BookLayout({
               type="button"
               className="g-book__nav"
               aria-label="Página anterior"
-              onClick={() => flipRef.current?.flipPrev()}
+              onClick={() => {
+                userFlipRef.current = true;
+                flipRef.current?.flipPrev();
+              }}
             >
               ‹
             </button>
@@ -335,7 +424,10 @@ export function BookLayout({
               type="button"
               className="g-book__nav"
               aria-label="Página siguiente"
-              onClick={() => flipRef.current?.flipNext()}
+              onClick={() => {
+                userFlipRef.current = true;
+                flipRef.current?.flipNext();
+              }}
             >
               ›
             </button>

@@ -1252,13 +1252,144 @@ button.danger:not(.link-button):hover:not(:disabled) {
   }
 }
 
-.g-book__flip {
+/* ── Cuerpo del libro (Fase 15f): tapas + lomo + canto + sombra alrededor
+   de `page-flip`, para que se lea como un libro físico y no como dos hojas
+   flotando. Todo es decorativo (`aria-hidden`) y va DETRÁS del host. ── */
+.g-book__body {
+  position: relative;
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  contain: layout paint;
+  isolation: isolate; /* contexto de apilado propio para los z-index de abajo */
+}
+
+@media (min-width: 701px) {
+  .g-book__body {
+    perspective: 2600px;
+    perspective-origin: 50% 32%;
+  }
+}
+
+.g-book__flip {
+  position: relative;
+  z-index: 3; /* las hojas, por encima de tapas y lomo */
+  width: 100%;
+  /* `contain: paint` recortaría la esquina que se despega y las sombras. */
+  contain: layout style;
   /* page-flip fija la altura; esto solo evita un salto antes de que monte. */
   min-height: 60vh;
+}
+
+/* Tapas: un pelo más grandes que el bloque de hojas, material oscuro,
+   ligeramente abiertas hacia el lector. */
+.g-book__board {
+  position: absolute;
+  top: -2.6%;
+  bottom: -2.6%;
+  z-index: 1;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--g-fg) 24%, var(--book-paper)),
+    color-mix(in srgb, var(--g-fg) 20%, #000)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 40px 70px -34px rgba(0, 0, 0, 0.75);
+}
+.g-book__board--l {
+  left: -2%;
+  right: 50.2%;
+  border-radius: 4px 2px 2px 4px;
+  transform: rotateY(1.1deg);
+  transform-origin: right center;
+}
+.g-book__board--r {
+  right: -2%;
+  left: 50.2%;
+  border-radius: 2px 4px 4px 2px;
+  transform: rotateY(-1.1deg);
+  transform-origin: left center;
+}
+
+/* Lomo: banda vertical en la canal, hundida. */
+.g-book__spine {
+  position: absolute;
+  top: -2.6%;
+  bottom: -2.6%;
+  left: 50%;
+  width: clamp(16px, 2.6%, 32px);
+  transform: translateX(-50%);
+  z-index: 2;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.42),
+    rgba(0, 0, 0, 0.1) 24%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(0, 0, 0, 0.1) 76%,
+    rgba(0, 0, 0, 0.42)
+  );
+}
+
+/* Canto de páginas: el taco de hojas apiladas que se ve por el corte, en el
+   borde EXTERIOR de cada lado (nunca en el lomo). El izquierdo —lo ya leído—
+   crece y el derecho —lo que falta— encoge con `--book-page`/`--book-count`. */
+.g-book__body::before,
+.g-book__body::after {
+  content: '';
+  position: absolute;
+  top: 1.6%;
+  bottom: 1.6%;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--book-paper) 86%, #000) 0 1px,
+    var(--book-paper) 1px 3px
+  );
+  box-shadow: 0 16px 30px -14px rgba(0, 0, 0, 0.55);
+}
+/* Izquierdo: páginas ya leídas → crece con `--book-page`. */
+.g-book__body::before {
+  right: 100%;
+  width: clamp(
+    1px,
+    calc(var(--book-page, 0) / max(var(--book-count, 20), 1) * 26px),
+    26px
+  );
+  border-radius: 3px 0 0 3px;
+}
+/* Derecho: páginas por leer → encoge según avanzas. */
+.g-book__body::after {
+  left: 100%;
+  width: clamp(
+    1px,
+    calc(
+      (max(var(--book-count, 20), 1) - var(--book-page, 0)) /
+        max(var(--book-count, 20), 1) * 26px
+    ),
+    26px
+  );
+  border-radius: 0 3px 3px 0;
+}
+
+/* Sombra en el suelo, para asentar el libro. */
+.g-book__shadow {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: -6%;
+  height: 12%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    58% 100% at 50% 0%,
+    rgba(0, 0, 0, 0.55),
+    transparent 72%
+  );
+  filter: blur(7px);
 }
 
 .g-book__progress {
@@ -1272,7 +1403,16 @@ button.danger:not(.link-button):hover:not(:disabled) {
 
 .g-book__leaf {
   position: relative;
-  background: var(--book-paper);
+  /* Papel: un tono cálido con un veladura sutil hacia el lomo (borde interior)
+     y un realce en el canto — da volumen sin textura pesada. */
+  background:
+    linear-gradient(105deg, rgba(0, 0, 0, 0.05), transparent 12%),
+    linear-gradient(
+      -75deg,
+      rgba(255, 255, 255, 0.04),
+      transparent 8%
+    ),
+    var(--book-paper);
   overflow: hidden;
   display: flex;
   /* Paspartú: la copia se monta sobre el papel con un margen. */
