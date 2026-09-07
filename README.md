@@ -27,11 +27,12 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
 - **Seguridad de archivos real**: validación por contenido (magic bytes / `ffprobe`), re-encode
   obligatorio, tiro de metadatos EXIF/GPS, límites contra decompression bombs y DoS de subida,
   archivos privados solo por URL firmada.
-- **Video** (Fase 14, en curso): se sube, se valida con `ffprobe` (contenedor, duración,
+- **Video** (Fase 14, completa): se sube, se valida con `ffprobe` (contenedor, duración,
   resolución, frame rate) y se transcodifica en segundo plano a un master limpio + póster + varias
   renditions **con marca de agua**, empaquetadas como **HLS adaptativo** (`master.m3u8` multi-calidad);
-  se reproduce en el lightbox con `hls.js`. El licenciamiento del video y el hero en video llegan
-  en 14d.
+  se reproduce en el lightbox con `hls.js`. Se **licencia** igual que una foto (entrega del master
+  limpio de un solo uso, con el licenciatario incrustado) y puede ser el **hero** de la portada
+  (`<video>` en bucle, que respeta `prefers-reduced-motion`).
 - **Protección de la obra**: marca de agua estampada por el servidor en todo lo público, el
   original de alta resolución nunca se sirve fuera de un álbum privado, registro de derechos por
   imagen embebido en IPTC/XMP con `exiftool` real.
@@ -106,8 +107,8 @@ nivel igual o superior al suyo.
   `PATCH /site` (`admin`+) · `POST/DELETE /site/watermark` (logo, `admin`+) ·
   `POST/GET /site/watermark/regenerate` (regenerar en segundo plano, `admin`+) ·
   `POST /contact` (público, honeypot) · `GET|PATCH|DELETE /contact/messages` (`admin`+)
-- **Licenciamiento** (Fase 12a): `POST /license-requests` (público, honeypot, solo fotos
-  publicadas) · `GET /license-requests` (bandeja, `admin`+) ·
+- **Licenciamiento** (Fase 12a): `POST /license-requests` (público, honeypot, fotos o videos
+  publicados) · `GET /license-requests` (bandeja, `admin`+) ·
   `PATCH /license-requests/:id` (cotizar, `admin`+) ·
   `POST /license-requests/:id/accept` (emite la licencia, `admin`+) ·
   `GET /deliveries/:token` (público, entrega el archivo — un solo uso)
@@ -145,7 +146,7 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-110 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+111 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb),
 `video-pipeline.service.spec.ts` (integración con `ffmpeg`/`ffprobe`/`exiftool` reales: valida un
 MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview, escala una

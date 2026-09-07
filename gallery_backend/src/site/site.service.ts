@@ -11,12 +11,17 @@ import { WatermarkService } from '../protection/watermark.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateSiteDto } from './dto/site.dto';
 
-/** La imagen del hero, ya con sus URLs de entrega resueltas. */
+/** El hero de la portada (foto o video), ya con sus URLs de entrega resueltas. */
 export interface HeroMedia {
   mediaId: string;
+  kind: 'photo' | 'video';
   width: number;
   height: number;
   placeholder: string | null;
+  /**
+   * Foto: `thumb`/…/`large` + `original`. Video: esos (el póster) + `preview`
+   * (MP4) + `hls` (`master.m3u8`) — **nunca** el master limpio (D9).
+   */
   urls: Record<string, string>;
 }
 
@@ -119,9 +124,10 @@ export class SiteService {
   /**
    * Actualiza los ajustes (merge de los campos presentes en el DTO).
    *
-   * @throws BadRequestException si `heroMediaId` apunta a una imagen que no
-   *         existe o cuyo álbum no es público (el hero se sirve sin firma en
-   *         una página cacheada).
+   * @throws BadRequestException si `heroMediaId` apunta a un elemento que no
+   *         existe, cuyo álbum no es público, que no está publicado, o que es
+   *         un video cuyo transcode aún no terminó (el hero se sirve sin firma
+   *         en una página cacheada).
    */
   async update(dto: UpdateSiteDto): Promise<PublicSite> {
     if (dto.heroMediaId) {
@@ -132,10 +138,11 @@ export class SiteService {
       if (
         !media ||
         media.album.visibility !== 'public' ||
-        media.status !== 'published'
+        media.status !== 'published' ||
+        !media.storage_key // video a medio transcodificar
       ) {
         throw new BadRequestException(
-          'La imagen del hero debe ser una foto publicada de una colección pública.',
+          'El hero debe ser una foto o un video publicado (y ya procesado) de una colección pública.',
         );
       }
     }
@@ -486,12 +493,19 @@ export class SiteService {
       if (media) {
         hero = {
           mediaId: media.media_id,
+          kind: media.kind,
           width: media.width,
           height: media.height,
           placeholder: media.placeholder,
           urls: {
-            ...(media.storage_key
+            // Foto: el original re-codificado (con derechos, sin marca). Video:
+            // NUNCA el master limpio (D9) — solo el `preview` y el HLS, que ya
+            // llevan la marca de agua incrustada.
+            ...(media.kind === 'photo' && media.storage_key
               ? { original: this.storage.urlFor(media.storage_key, 'public') }
+              : {}),
+            ...(media.kind === 'video' && media.hls_manifest_key
+              ? { hls: this.storage.urlFor(media.hls_manifest_key, 'public') }
               : {}),
             ...Object.fromEntries(
               media.variants.map((v) => [

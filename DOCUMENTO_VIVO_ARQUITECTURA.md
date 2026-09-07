@@ -2094,3 +2094,69 @@ elemento o su álbum (`ImagesService.remove` y `AlbumsService.remove` iteran ese
 - **No verificado en navegador real** (sin herramienta de navegador en el entorno): la
   reproducción visual con `hls.js` y el cambio automático de calidad no se comprobaron en un
   browser; sí el flujo completo por API y que cada pieza HLS se sirve correctamente.
+
+## 23. Fase 14d — Licenciamiento de video + hero de portada en video (completada y verificada, 2026-09-07)
+
+Cuarto y último tramo de la Fase 14 — con esto el video queda al mismo nivel que la foto:
+se publica, se protege (marca + derechos), se **licencia** y puede ser el **hero** de la portada.
+
+### 23.1 Licenciamiento de video
+
+El backend ya trataba el video en `consumeDelivery` desde la 14b (`kind === 'video'` → `format:
+'mp4'`, extensión `.mp4`, `metadata.embed` con etiquetas QuickTime/XMP). La 14d lo **verifica de
+punta a punta en vivo** y ajusta el resto:
+
+- **Texto**: `LicenseRequestForm` (el panel del lightbox) recibe `kind` y dice "Solicitar licencia
+  de **este video**" / "…de esta foto"; los correos de `LicensingService` (`submit`, `accept`)
+  dicen "un video de «…»" / "una foto de «…»" según `media.kind`. El endpoint, el honeypot, el
+  throttle y la validación (`published` + álbum `public`) no cambian — un video se licencia por el
+  mismo camino que una foto.
+- El `LicenseRequestForm` se muestra en el lightbox tanto para foto como para video (ya lo hacía
+  desde la Fase 12d — recibe `mediaId`, ahora también `kind`).
+
+Verificado en vivo (`verify-14d.mjs`, **14/14**): subir un video 720p → publicar → `POST
+/license-requests { mediaId: <video> }` → 202 y aparece en la bandeja con la miniatura (el póster
+del video); cotizar → aceptar (201, se emite la licencia y el `delivery_token`); **primera
+descarga → 200, `Content-Type: video/mp4`, `Content-Disposition: attachment;
+filename="licencia-XXXXXXXX.mp4"`, MP4 real (box `ftyp`) de 720p** (el **master limpio**, no una
+rendition con marca); `exiftool` sobre el archivo entregado confirma los derechos **más la nota del
+licenciatario** ("Licencia otorgada a … para uso commercial: …") incrustada al vuelo solo para esa
+descarga; **segunda descarga del mismo token → 404** (un solo uso); la solicitud queda
+`fulfilled`. La extracción del token para la prueba se hizo con un `logger.warn` temporal en
+`accept()`, usado una vez y **quitado** antes del commit (mismo método que la Fase 12c — el
+`RESEND_API_KEY` del `.env` es real, así que `MailService` no vuelca el cuerpo del correo). Además
+`licensing.service.spec.ts` gana un test de `consumeDelivery` para el caso video (assert de
+`format: 'mp4'` y `filename` `.mp4`) para no depender de ese truco en el futuro.
+
+### 23.2 Hero de portada en video
+
+`site_settings.hero_media_id` ya era genérico. Ajustes:
+
+- **`PATCH /site`**: la validación de `heroMediaId` pasa a exigir además `media.storage_key`
+  (rechaza un video cuyo transcode aún no terminó) y el mensaje deja de decir solo "foto".
+- **`SiteService.toPublic`**: `HeroMedia` gana `kind`; para un hero **video** el `urls` incluye
+  `preview` (MP4) + `hls` (`master.m3u8`) y los WebP del póster — **nunca** `original` (el master
+  limpio, D9); para un hero **foto** sigue igual (`original` + derivados).
+- **Frontend**: `components/HeroMedia.tsx` (nuevo, cliente) — `<img>` para foto, `<video autoplay
+  muted loop playsInline>` (usando el `preview`) para video, **salvo `prefers-reduced-motion`**:
+  entonces el mismo `<video>` se queda en pausa mostrando el póster (no se cambia el tipo de
+  elemento, para no romper la hidratación). `app/page.tsx` lo usa en lugar del `<img>` directo. El
+  selector de hero de `/studio/ajustes` ya listaba los videos (usa el póster de miniatura); ahora
+  la etiqueta añade "(video)".
+
+Verificado en vivo (`verify-14d-hero.mjs`, **6/6**): un hero de video sin procesar → 400; ya
+procesado y publicado → 200; `GET /site` devuelve `hero.kind === 'video'` con `urls.preview` +
+`urls.hls` y **sin** `urls.original`; el `preview` del hero descarga como MP4.
+
+### 23.3 Estado de la Fase 14
+
+Con la 14d cerrada, **la Fase 14 está completa**: un video se sube (validado por contenido), se
+transcodifica a un master limpio + póster + preview + renditions HLS **con marca de agua**, se
+reproduce en el lightbox (`hls.js`), se puede **licenciar** (entrega del master limpio de un solo
+uso, con el licenciatario incrustado) y puede ser el **hero** de la portada. **111 tests / 16
+suites**, `next build` prod OK, y `verify-14b/14c/14d(+hero)` + `probe-fase10` todos en verde.
+Bloque V1–V14 (video) y L1–L17 (licenciamiento, ya cubre video) en `PRUEBAS_SEGURIDAD.md`.
+
+> **No verificado en navegador real** (todo el entorno es sin browser): la reproducción visual del
+> `<video>`/`hls.js` en el lightbox y el hero, y el respeto a `prefers-reduced-motion` en pantalla,
+> no se comprobaron en un navegador — sí todo el flujo y el servido de cada pieza por API.

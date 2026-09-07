@@ -7,24 +7,28 @@ import { INTENDED_USES, INTENDED_USE_LABEL, type IntendedUse } from '@/lib/inten
 type Status = { kind: 'idle' | 'sending' | 'sent' } | { kind: 'error'; message: string };
 
 /**
- * Formulario público para solicitar licenciar UNA foto concreta, embebido en
- * el lightbox. Envía a `POST /license-requests` (202: la solicitud queda en
- * la bandeja del gestor, que responde por correo con una cotización) — mismo
- * endpoint y mismas protecciones (honeypot, límite de envíos) que usa la
- * bandeja de gestión, `ContactForm` es el patrón que replica.
+ * Formulario público para solicitar licenciar UN elemento concreto (foto o
+ * video), embebido en el lightbox. Envía a `POST /license-requests` (202: la
+ * solicitud queda en la bandeja del gestor, que responde por correo con una
+ * cotización) — mismo endpoint y mismas protecciones (honeypot, límite de
+ * envíos) que usa la bandeja de gestión, `ContactForm` es el patrón que replica.
  *
- * @param props.mediaId - UUID de la foto abierta en el lightbox; va oculto,
+ * @param props.mediaId - UUID del elemento abierto en el lightbox; va oculto,
  *   nunca lo edita quien solicita.
+ * @param props.kind - `'photo'` o `'video'` — solo cambia el texto visible.
  * @param props.onClose - Cierra el panel del formulario (lo llama el propio
- *   lightbox al cambiar de foto o al hacer clic en "Cancelar").
+ *   lightbox al cambiar de elemento o al hacer clic en "Cancelar").
  */
 export function LicenseRequestForm({
   mediaId,
+  kind = 'photo',
   onClose,
 }: {
   mediaId: string;
+  kind?: 'photo' | 'video';
   onClose: () => void;
 }) {
+  const noun = kind === 'video' ? 'este video' : 'esta foto';
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [form, setForm] = useState({
     name: '',
@@ -73,7 +77,7 @@ export function LicenseRequestForm({
   return (
     <form className="g-license-panel stack" onSubmit={submit}>
       <div className="panel-head" style={{ marginBottom: 0 }}>
-        <strong>Solicitar licencia de esta foto</strong>
+        <strong>Solicitar licencia de {noun}</strong>
         <button type="button" className="link-button" onClick={onClose}>
           Cancelar
         </button>
@@ -115,7 +119,7 @@ export function LicenseRequestForm({
         </select>
       </label>
       <label>
-        Cuéntame el alcance del uso
+        Cuéntame el alcance del uso previsto
         <textarea
           required
           rows={4}

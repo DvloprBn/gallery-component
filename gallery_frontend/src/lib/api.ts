@@ -74,12 +74,14 @@ export async function fetchPublicGalleries(
   }
 }
 
-/** La imagen del hero de la portada, con sus URLs de entrega ya resueltas. */
+/** El hero de la portada (foto o video), con sus URLs de entrega ya resueltas. */
 export interface SiteHero {
   mediaId: string;
+  kind: 'photo' | 'video';
   width: number;
   height: number;
   placeholder: string | null;
+  /** Video: incluye `preview` (MP4) y `hls` (`master.m3u8`), nunca el master. */
   urls: Record<string, string>;
 }
 

@@ -137,13 +137,17 @@ describe('SiteService', () => {
   it('update() acepta un hero publicado de un álbum público', async () => {
     prisma.media.findUnique.mockResolvedValue({
       media_id: 'img-1',
+      kind: 'photo',
       status: 'published',
+      storage_key: 'orig.webp',
       album: { visibility: 'public' },
     });
     // toPublic() resuelve el hero con findFirst (solo si sigue publicado)
     prisma.media.findFirst.mockResolvedValue({
       media_id: 'img-1',
+      kind: 'photo',
       storage_key: 'orig.webp',
+      hls_manifest_key: null,
       width: 1600,
       height: 1067,
       placeholder: 'blur',

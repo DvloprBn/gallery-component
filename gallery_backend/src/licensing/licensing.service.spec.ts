@@ -394,5 +394,34 @@ describe('LicensingService', () => {
       expect(result.filename).toMatch(/^licencia-.*\.jpg$/);
       expect(result.contentType).toBe('image/jpeg');
     });
+
+    it('para un VIDEO entrega el master MP4: `format: mp4`, nombre `.mp4`, derechos + licenciatario (Fase 14d)', async () => {
+      prisma.delivery_tokens.findUnique.mockResolvedValue({
+        ...validToken,
+        license: {
+          ...validToken.license,
+          conditions: 'Uso web, 1 año',
+          media: { kind: 'video', storage_key: 'master.mp4', mime_type: 'video/mp4', rights: null },
+        },
+      });
+      storage.read.mockResolvedValue({
+        stream: Readable.from(Buffer.from('mp4-bytes')),
+        contentType: 'video/mp4',
+        bytes: 9,
+      });
+
+      const result = await service.consumeDelivery('raw-token');
+
+      expect(storage.read).toHaveBeenCalledWith('master.mp4');
+      expect(metadata.embed).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        'mp4',
+        expect.objectContaining({
+          rightsStatement: expect.stringContaining('Editor XYZ'),
+        }),
+      );
+      expect(result.filename).toMatch(/^licencia-.*\.mp4$/);
+      expect(result.contentType).toBe('video/mp4');
+    });
   });
 });

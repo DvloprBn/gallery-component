@@ -97,7 +97,7 @@ const REQUEST_INCLUDE = {
 };
 
 /**
- * Solicitudes de licencia sobre fotos publicadas. Fase 12a (captura + aviso) +
+ * Solicitudes de licencia sobre fotos o videos publicados. Fase 12a (captura + aviso) +
  * 12b (cotizar) + 12c (emitir la licencia y entregar el archivo original
  * limpio por un enlace de un solo uso).
  */
@@ -133,7 +133,7 @@ export class LicensingService {
     });
     if (!media || media.status !== 'published' || media.album.visibility !== 'public') {
       throw new BadRequestException(
-        'Esa foto no está disponible para solicitar una licencia.',
+        'Ese elemento no está disponible para solicitar una licencia.',
       );
     }
 
@@ -162,7 +162,7 @@ export class LicensingService {
       to,
       `Solicitud de licencia — ${escapeHtml(media.album.title)}`,
       `<p><strong>${escapeHtml(dto.name)}</strong> &lt;${escapeHtml(dto.email)}&gt; pide licenciar ` +
-        `una foto de «${escapeHtml(media.album.title)}» para uso <strong>${escapeHtml(dto.intendedUse)}</strong>:</p>` +
+        `${media.kind === 'video' ? 'un video' : 'una foto'} de «${escapeHtml(media.album.title)}» para uso <strong>${escapeHtml(dto.intendedUse)}</strong>:</p>` +
         `<blockquote>${escapeHtml(dto.message)}</blockquote>` +
         (dto.budget ? `<p>Presupuesto: ${escapeHtml(dto.budget)}</p>` : ''),
     );
@@ -297,7 +297,7 @@ export class LicensingService {
       request.requester_email,
       `Tu licencia está lista — ${escapeHtml(request.media.album.title)}`,
       `<p>Hola ${escapeHtml(request.requester_name)},</p>` +
-        `<p>Tu licencia para una foto de «${escapeHtml(request.media.album.title)}» quedó emitida. ` +
+        `<p>Tu licencia para ${request.media.kind === 'video' ? 'un video' : 'una foto'} de «${escapeHtml(request.media.album.title)}» quedó emitida. ` +
         `Puedes descargar el archivo en alta resolución aquí:</p>` +
         `<p><a href="${downloadUrl}">${downloadUrl}</a></p>` +
         `<p>El enlace funciona <strong>una sola vez</strong> y caduca en ${DELIVERY_TOKEN_TTL_DAYS} días.</p>`,

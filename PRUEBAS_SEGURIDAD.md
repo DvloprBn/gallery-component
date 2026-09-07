@@ -14,10 +14,10 @@
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
 10b (curación), 11 (protección: marca de agua + derechos), 12 completa —12a–12d— (licenciamiento) y
-14a–14c (video: modelo + pipeline `ffmpeg` + marca de agua + HLS) verificadas.** Verificados con `curl` / scripts contra
+14a–14d (video: modelo + pipeline `ffmpeg` + marca de agua + HLS + licenciamiento + hero) verificadas.** Verificados con `curl` / scripts contra
 el backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de **seguridad de
 archivos** (F1–F19, incluida una corrección real en F19), el de identidad de sitio/contacto
-(S1–S13), el de protección (P1–P8), el de licenciamiento (L1–L17) y el de **video** (V1–V14 — ver
+(S1–S13), el de protección (P1–P8), el de licenciamiento (L1–L18) y el de **video** (V1–V15 — ver
 más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
 volumen/espera reales.
 
@@ -198,10 +198,11 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 | L15 | Entrega — token inventado / caducado / ya usado | los tres casos devuelven el mismo 404 (indistinguibles, mismo principio que las URLs firmadas de `/media/:key`); nunca se toca el almacenamiento si el token no pasa la validación | ✅ Probado 2026-09-04 |
 | L16 | Entrega — el archivo servido | `Content-Disposition: attachment`; es el **original** limpio de resolución completa (no un derivado); lleva los metadatos de derechos **más una nota de a quién se licenció**, incrustada al vuelo solo para esa descarga (trazabilidad si el archivo se filtra después) | ✅ Probado 2026-09-04 (descarga real ≈500 KB) |
 | L17 | Botón público "Solicitar licencia" del lightbox (Fase 12d) | Es solo frontend — llama a `POST /license-requests` con el mismo `mediaId`/cuerpo que ya cubren L1–L5; no abre superficie nueva. Verificado que el cuerpo exacto que arma `LicenseRequestForm` (incluido `website` vacío) pasa por las mismas reglas: `mediaId` de una foto real → 202 y llega a la bandeja; `website` relleno → 202 pero **nunca** llega a la bandeja (mismo honeypot que L3) | ✅ Probado 2026-09-04 (`verify-12d.mjs`, 12/12 checks) |
+| L18 | Licenciar un **video** (Fase 14d) | Se solicita, cotiza, acepta y entrega por el **mismo** camino que una foto (mismo endpoint, honeypot, throttle, validación `published`+`public`). `consumeDelivery` reconoce `kind==='video'` → entrega el **master limpio** en MP4 (`Content-Disposition: attachment`, `filename` `.mp4`), con los derechos **y la nota del licenciatario** incrustados al vuelo; un solo uso (2ª descarga → 404); la solicitud queda `fulfilled` | ✅ Probado 2026-09-07 (`verify-14d.mjs`, 14/14 — token extraído con un `logger.warn` temporal, quitado tras la prueba; + test unitario de `consumeDelivery` para video) |
 
 ---
 
-## Bloque específico — Video (`POST /albums/:id/media`, transcode, HLS — Fases 14b–14c)
+## Bloque específico — Video (`POST /albums/:id/media`, transcode, HLS, hero — Fases 14b–14d)
 
 Mismo principio que el bloque de imagen: **el archivo del cliente nunca se sirve tal cual** y la
 validación es por contenido, no por extensión ni `Content-Type`. Aquí la autoridad es `ffprobe`.
@@ -222,6 +223,7 @@ validación es por contenido, no por extensión ni `Content-Type`. Aquí la auto
 | V12 | HLS — visibilidad de cada objeto | los objetos HLS viven en `media.hls_keys`; `visibilityOfKey` los resuelve por ahí (además de `storage_key`/`media_variants`) → un segmento de un álbum **privado** exige la firma HMAC en `GET /media/:key`, igual que cualquier media privada. Las URIs dentro de las playlists de un álbum privado se firman con un TTL más largo (`MEDIA_HLS_URL_TTL_SECONDS`) pero **con la misma firma** | ✅ Probado 2026-09-07 (bug de 404 en todas las URLs HLS encontrado y corregido; `verify-14c` sirve todas las piezas) |
 | V13 | HLS — limpieza al borrar | `media.hls_keys` reúne el master.m3u8 + las playlists + **todos** los segmentos; `DELETE /media/:id` y el borrado de álbum iteran ese array → cero objetos huérfanos | ✅ Probado 2026-09-07 (`verify-14c.mjs`: tras borrar, un `.ts` de antes → **404**) |
 | V14 | `hls.js` desde `cdnjs` | la CSP `script-src` gana **solo** `https://cdnjs.cloudflare.com` (para `hls.min.js` pineado a 1.5.17); `enableWorker:false` para no depender de `worker-src`; los segmentos se piden al mismo origen que la API (`connect-src` ya lo permite); MSE usa `blob:` (`media-src` ya lo permite) | ✅ Revisado en código |
+| V15 | Hero de portada en **video** (Fase 14d) | `PATCH /site` exige que el video esté **procesado** (`storage_key` no nulo) además de publicado + álbum `public` (si no → 400). `GET /site` para un hero video expone `preview` (MP4) + `hls` (`master.m3u8`) + el póster — **nunca** `original` (el master limpio, D9). El `<video>` del hero respeta `prefers-reduced-motion` (→ póster estático) | ✅ Probado 2026-09-07 (`verify-14d-hero.mjs`, 6/6); reproducción visual no verificada en navegador |
 
 ---
 

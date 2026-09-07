@@ -187,6 +187,7 @@ export function Lightbox({
         {showLicenseForm ? (
           <LicenseRequestForm
             mediaId={current.mediaId}
+            kind={current.kind}
             onClose={() => setShowLicenseForm(false)}
           />
         ) : (

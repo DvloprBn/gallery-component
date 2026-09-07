@@ -136,11 +136,15 @@ function Inner() {
         const perCollection = await Promise.all(
           collections.map(async (c) => {
             const g = await apiFetch<{
-              media: { mediaId: string; urls: Record<string, string> }[];
+              media: {
+                mediaId: string;
+                kind: 'photo' | 'video';
+                urls: Record<string, string>;
+              }[];
             }>(`/g/${c.slug}`);
             return g.media.map((m, i) => ({
               mediaId: m.mediaId,
-              label: `${c.title} — #${i + 1}`,
+              label: `${c.title} — #${i + 1}${m.kind === 'video' ? ' (video)' : ''}`,
               thumbUrl: m.urls.thumb ?? m.urls.small ?? null,
             }));
           }),

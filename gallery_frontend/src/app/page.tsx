@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BlurhashCanvas } from '@/components/BlurhashCanvas';
+import { HeroMedia } from '@/components/HeroMedia';
 import { fetchPublicGalleries, fetchSite } from '@/lib/api';
 
 /** Datos en vivo — no se prerenderiza en build. */
@@ -16,24 +17,14 @@ export default async function HomePage() {
     fetchPublicGalleries(true),
   ]);
 
-  const heroUrl = site?.hero
-    ? site.hero.urls.large ?? site.hero.urls.medium ?? site.hero.urls.original
-    : null;
-
   return (
     <main className="pf">
-      <section className={`pf-hero${heroUrl ? '' : ' pf-hero--plain'}`}>
+      <section className={`pf-hero${site?.hero ? '' : ' pf-hero--plain'}`}>
         {site?.hero ? (
           <BlurhashCanvas hash={site.hero.placeholder} />
         ) : null}
-        {heroUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={heroUrl}
-            alt=""
-            className="pf-hero__media"
-            fetchPriority="high"
-          />
+        {site?.hero ? (
+          <HeroMedia hero={site.hero} className="pf-hero__media" />
         ) : null}
         <div className="pf-hero__scrim" />
         <div className="pf-hero__inner">
