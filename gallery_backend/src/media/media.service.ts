@@ -8,6 +8,12 @@ import type {
 import { sha256Hex } from '../common/utils/token.util';
 import { verifyMediaSignature } from '../storage/media-signing';
 
+/** TTL (s) de las URLs firmadas de los objetos HLS de un álbum privado (Fase 14c). */
+const HLS_URL_TTL = Math.max(
+  600,
+  Number(process.env.MEDIA_HLS_URL_TTL_SECONDS) || 3600,
+);
+
 /** Un elemento (foto o video) tal como lo consume la galería pública. */
 export interface PublicMedia {
   mediaId: string;
@@ -182,6 +188,17 @@ export class MediaService {
           ...(visibility === 'private' && m.storage_key
             ? { original: this.storage.urlFor(m.storage_key, visibility) }
             : {}),
+          // `hls` = el master.m3u8 (Fase 14c) — reproducción adaptativa; el
+          // `preview` MP4 sigue como respaldo para navegadores sin `hls.js`.
+          ...(m.hls_manifest_key
+            ? {
+                hls: this.storage.urlFor(
+                  m.hls_manifest_key,
+                  visibility,
+                  HLS_URL_TTL,
+                ),
+              }
+            : {}),
           ...Object.fromEntries(
             m.variants.map((v) => [
               v.label,
@@ -244,8 +261,17 @@ export class MediaService {
         media: { include: { album: { select: { visibility: true } } } },
       },
     });
-    return variant
-      ? (variant.media.album.visibility as MediaVisibility)
+    if (variant) {
+      return variant.media.album.visibility as MediaVisibility;
+    }
+    // Objetos HLS (master.m3u8, stream playlists, segmentos .ts) — viven en
+    // `media.hls_keys`, no en `storage_key` ni en `media_variants` (Fase 14c).
+    const hlsOwner = await this.prisma.media.findFirst({
+      where: { hls_keys: { has: key } },
+      include: { album: { select: { visibility: true } } },
+    });
+    return hlsOwner
+      ? (hlsOwner.album.visibility as MediaVisibility)
       : null;
   }
 

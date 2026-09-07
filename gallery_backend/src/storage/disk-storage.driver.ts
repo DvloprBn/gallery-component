@@ -19,6 +19,8 @@ const CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
   avif: 'image/avif',
   mp4: 'video/mp4',
+  m3u8: 'application/vnd.apple.mpegurl',
+  ts: 'video/mp2t',
 };
 
 /**
@@ -102,7 +104,9 @@ export class DiskStorageDriver implements StorageDriver {
    * un `../` o una barra nunca llegan al sistema de archivos (path traversal).
    */
   private pathFor(key: string): string {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{3,4}$/.test(key)) {
+    // `<uuid>.<ext>` con ext de 2–4 (webp/jpeg/png/avif/mp4/m3u8/ts). Sin
+    // separadores de ruta: un `../` o una barra nunca llega al FS.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{2,4}$/.test(key)) {
       throw new Error('Clave de almacenamiento inválida.');
     }
     return join(this.root, key);

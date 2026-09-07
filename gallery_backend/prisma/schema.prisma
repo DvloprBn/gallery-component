@@ -204,7 +204,8 @@ model media {
   video_codec      String?  @db.VarChar(16) // 'h264' | 'hevc' | 'vp9' | 'av1'
   audio_codec      String?  @db.VarChar(16) // 'aac' | null si es mudo
   has_audio        Boolean  @default(false)
-  hls_manifest_key String?  // ruta del `.m3u8` maestro; null hasta la Fase 14c
+  hls_manifest_key String?  // clave del `master.m3u8` — se sirve como `urls.hls` (Fase 14c)
+  hls_keys         String[] @default([]) // TODAS las claves HLS (master + playlists + segmentos) — para limpiar al borrar
   poster_key       String?  // frame extraído (WebP) — la portada del video
   processing_error String?  @db.VarChar(500) // si el transcode falló, el gestor lo ve aquí
 

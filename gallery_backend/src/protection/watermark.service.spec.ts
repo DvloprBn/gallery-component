@@ -109,4 +109,23 @@ describe('WatermarkService', () => {
       }),
     ).resolves.toBeInstanceOf(Buffer);
   });
+
+  it('buildFrameOverlay() devuelve un PNG RGBA del tamaño exacto del fotograma (Fase 14c)', async () => {
+    const png = await service.buildFrameOverlay(640, 360, {
+      assetBuffer: null,
+      text: '© Mara Solís',
+      opacity: 0.35,
+      placement: 'tiled',
+    });
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe('png');
+    expect(meta.width).toBe(640);
+    expect(meta.height).toBe(360);
+    expect(meta.channels).toBe(4); // con alfa — se compone sobre el video
+    // Hay píxeles no transparentes (la marca): el canal alfa no es todo 0.
+    const { data } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let maxAlpha = 0;
+    for (let i = 3; i < data.length; i += 4) maxAlpha = Math.max(maxAlpha, data[i]);
+    expect(maxAlpha).toBeGreaterThan(0);
+  });
 });

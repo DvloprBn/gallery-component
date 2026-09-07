@@ -40,7 +40,8 @@ function contentSecurityPolicy(): string {
     `media-src 'self' blob: https://res.cloudinary.com ${api}`.trim(),
     "font-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    `script-src 'self' 'unsafe-inline'${dev}`,
+    // cdnjs: solo para `hls.js` (reproducción HLS del video, Fase 14c).
+    `script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com${dev}`,
     `connect-src 'self' ${api}${devConnect}`.trim(),
     ...(isProd ? ['upgrade-insecure-requests'] : []),
   ].join('; ');

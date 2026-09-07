@@ -2009,3 +2009,88 @@ regeneración de marca, Fase 11). Pasos:
   XMP `dc:Rights`/`dc:Creator`, `Credit`, `UsageTerms`, `WebStatement`, `LicensorURL` — la
   invariante D10 (todo archivo servido lleva los derechos) también se cumple en video.
 - `verify-14a.mjs` (rutas/campos `media`) y `probe-fase10.mjs` (24/24) siguen en verde.
+
+## 22. Fase 14c — Marca de agua sobre el video + HLS adaptativo (completada y verificada, 2026-09-07)
+
+Tercer tramo de la Fase 14: la protección (marca de agua en todo lo público, como en las fotos —
+D9) y la entrega "de producción" (streaming adaptativo por HLS).
+
+### 22.1 Marca de agua en el video
+
+`WatermarkService.buildFrameOverlay(w, h, config)` (nuevo) construye un **PNG RGBA transparente del
+tamaño exacto de la rendition** con la marca ya estampada (mosaico diagonal o esquina — reutiliza
+el mismo SVG y la misma lógica de tamaño de mosaico acotado que las fotos, incluida la lección del
+`thumb`). `ffmpeg` lo aplica una sola vez con `overlay=0:0` mientras codifica cada rendition — la
+marca va **incrustada en la imagen**, no se puede quitar cuadro a cuadro.
+
+Se estampa en: el póster (los 4 WebP, vía `watermark.composite`, como cualquier derivado de foto),
+el `preview` MP4 y **todas** las renditions HLS. **Nunca** el master (D9). Solo en álbumes `public`
+(`unlisted`/`private` no llevan marca, igual criterio que las fotos).
+
+### 22.2 HLS adaptativo (`VideoPipelineService.buildRendition` + `packageHls`)
+
+- `buildRendition(master, out, {w,h}, fps, bitrateKbps, overlayPngPath|null, hasAudio)`: escala el
+  master a un tamaño **exacto** (par, sin ampliar), aplica la marca si toca, y codifica H.264 con
+  los fotogramas clave **alineados a 2 s** (`-g`/`-keyint_min` = `2·fps`, `-sc_threshold 0`) para
+  que los segmentos HLS partan limpio. Bitrate por altura: 360p→800k, 540p→1400k, 720p→2800k,
+  1080p→5000k.
+- Alturas: `[360, 540, 720, 1080]` que quepan **bajo** la del master, más la del propio master
+  (deduplicadas). Un master 720p → renditions 360/540/720.
+- `packageHls(renditionPaths, outDir, hasAudio)`: un solo `ffmpeg` con `-c copy` (solo
+  remultiplexa, rápido) y `-var_stream_map` → `master.m3u8` + `stream_N.m3u8` + `seg_N_*.ts` por
+  rendition, `-hls_time 4 -hls_playlist_type vod -hls_flags independent_segments`.
+- El `preview` MP4 standalone (respaldo sin HLS) = la rendition ≤720p más alta.
+
+### 22.3 Reescritura de playlists y almacenamiento
+
+Las claves del `StorageService` son opacas (`<uuid>.<ext>`) — **no** coinciden con los nombres
+relativos que escribe `ffmpeg` (`seg_0_003.ts`). Tras el empaquetado, el job:
+
+1. sube cada `.ts` y guarda `nombre → URL servida`;
+2. reescribe cada `stream_N.m3u8` (cada línea que no empieza por `#` es un segmento → se sustituye
+   por su URL) y lo sube;
+3. reescribe `master.m3u8` (cada línea = un `stream_N.m3u8` → su URL) y lo sube → su clave es
+   `media.hls_manifest_key`.
+
+Todas las claves HLS (master + playlists + segmentos) se guardan en **`media.hls_keys String[]`**
+(migración `20260907160000_media_hls_keys`) — para poder **borrarlas todas** al eliminar el
+elemento o su álbum (`ImagesService.remove` y `AlbumsService.remove` iteran ese array).
+
+- **Bug propio corregido**: `GET /media/:key` resuelve la visibilidad buscando la clave en
+  `media.storage_key` o `media_variants.storage_key`. Los objetos HLS viven en `hls_keys`, así que
+  **todas las URLs HLS daban 404**. `visibilityOfKey` gana una tercera búsqueda
+  `media.findFirst({ where: { hls_keys: { has: key } } })`.
+- `DiskStorageDriver`: la validación de clave pasa a `[a-z0-9]{2,4}` (el `.ts` tiene 2 caracteres)
+  y `CONTENT_TYPES` gana `m3u8 → application/vnd.apple.mpegurl` y `ts → video/mp2t`.
+- URLs firmadas de un álbum **privado**: los objetos HLS usan un TTL más largo
+  (`MEDIA_HLS_URL_TTL_SECONDS`, 3600 s) — una reproducción pausada seguiría pidiendo segmentos.
+  Para `public`/`unlisted` la URL es estable y esto no aplica.
+
+### 22.4 Entrega y frontend
+
+- `GET /g/:slug` y la vista del Studio añaden `urls.hls` (el `master.m3u8`) cuando existe; el
+  `preview` MP4 sigue como respaldo.
+- `Lightbox`: para `kind === 'video'`, si hay `urls.hls` → HLS nativo en Safari
+  (`canPlayType('application/vnd.apple.mpegurl')`), o **`hls.js`** cargado desde `cdnjs` (`hls.min.js`
+  1.5.17, `enableWorker: false` para no depender de `worker-src` en la CSP) en el resto; ante un
+  error fatal de `hls.js`, o si no hay `urls.hls`, cae al `preview`. `next.config.ts` gana
+  `https://cdnjs.cloudflare.com` en `script-src` (solo para `hls.js`).
+
+### 22.5 Verificación
+
+- `tsc` back + front limpios. **110 tests / 16 suites** — `video-pipeline.service.spec.ts` gana
+  `buildRendition()` (escala a tamaño exacto + incrusta una marca PNG) y `packageHls()`
+  (`master.m3u8` + `stream_N.m3u8` + `.ts`); `watermark.service.spec.ts` gana `buildFrameOverlay()`
+  (PNG RGBA del tamaño del fotograma, con alfa no nulo).
+- `next build` producción OK, 16 rutas.
+- **`verify-14c.mjs`** contra el backend en vivo — **14/14**: subida de un video 720p → 3 renditions
+  (360/540/720); `master.m3u8` con `#EXT-X-STREAM-INF` y las 3 `stream_N.m3u8` como **URLs http
+  absolutas** (no nombres relativos); cada `stream_N.m3u8` con `#EXTINF` y segmentos como URLs
+  absolutas; un `.ts` descarga como MPEG-TS (byte de sync `0x47`, `Content-Type: video/mp2t`); la
+  galería pública expone `urls.hls` + `urls.preview` y **no** `urls.original`; el póster WebP
+  descarga; **al borrar el elemento, los segmentos `.ts` dejan de existir (404)** — la limpieza de
+  `hls_keys` funciona.
+- `verify-14b.mjs` (13/13) y `probe-fase10.mjs` (24/24) siguen en verde.
+- **No verificado en navegador real** (sin herramienta de navegador en el entorno): la
+  reproducción visual con `hls.js` y el cambio automático de calidad no se comprobaron en un
+  browser; sí el flujo completo por API y que cada pieza HLS se sirve correctamente.

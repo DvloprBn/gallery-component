@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'node:child_process';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -238,6 +239,101 @@ export class VideoPipelineService {
       '-movflags', '+faststart',
       '-map_metadata', '-1',
       outPath,
+    ]);
+  }
+
+  /**
+   * Genera una *rendition* HLS: el master escalado a un tamaño exacto, con la
+   * marca de agua incrustada (si se pasa `overlayPngPath`), codificada con los
+   * fotogramas clave alineados a 2 s para que los segmentos HLS partan limpio.
+   *
+   * @param masterPath - El master ya transcodificado.
+   * @param outPath - Dónde escribir el MP4 de la rendition.
+   * @param size - `{ width, height }` EXACTOS de la rendition (par, sin ampliar).
+   * @param fps - Fotogramas por segundo del master (para el tamaño del GOP).
+   * @param bitrateKbps - Bitrate objetivo del video.
+   * @param overlayPngPath - PNG RGBA del tamaño de la rendition con la marca, o
+   *   `null` para no estampar (álbumes no `public`).
+   * @param hasAudio - Si mapear/codificar el audio.
+   */
+  async buildRendition(
+    masterPath: string,
+    outPath: string,
+    size: { width: number; height: number },
+    fps: number,
+    bitrateKbps: number,
+    overlayPngPath: string | null,
+    hasAudio: boolean,
+  ): Promise<void> {
+    const gop = Math.max(2, Math.round(fps * 2));
+    const scale = `scale=${size.width}:${size.height}:flags=lanczos`;
+    const inputs = ['-i', masterPath];
+    let filter: string;
+    if (overlayPngPath) {
+      inputs.push('-i', overlayPngPath);
+      filter = `[0:v]${scale}[v];[v][1:v]overlay=0:0:format=auto[vo]`;
+    } else {
+      filter = `[0:v]${scale}[vo]`;
+    }
+    const audio = hasAudio
+      ? ['-map', '0:a:0', '-c:a', 'aac', '-b:a', '128k']
+      : ['-an'];
+    await this.runFfmpeg([
+      ...inputs,
+      '-filter_complex', filter,
+      '-map', '[vo]',
+      ...audio,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-b:v', `${bitrateKbps}k`,
+      '-maxrate', `${Math.round(bitrateKbps * 1.2)}k`,
+      '-bufsize', `${bitrateKbps * 2}k`,
+      '-pix_fmt', 'yuv420p',
+      '-g', String(gop),
+      '-keyint_min', String(gop),
+      '-sc_threshold', '0',
+      '-movflags', '+faststart',
+      '-map_metadata', '-1',
+      outPath,
+    ]);
+  }
+
+  /**
+   * Empaqueta varias renditions ya codificadas en un HLS VOD multi-calidad:
+   * un `master.m3u8` + un `stream_N.m3u8` + segmentos `seg_N_*.ts` por
+   * rendition. Solo remultiplexa (`-c copy`), es rápido.
+   *
+   * @param renditionPaths - Rutas de los MP4 de rendition, de menor a mayor.
+   * @param outDir - Directorio donde escribir playlists y segmentos.
+   * @param hasAudio - Si las renditions traen pista de audio.
+   */
+  async packageHls(
+    renditionPaths: string[],
+    outDir: string,
+    hasAudio: boolean,
+  ): Promise<void> {
+    const inputs: string[] = [];
+    renditionPaths.forEach((p) => inputs.push('-i', p));
+    const maps: string[] = [];
+    renditionPaths.forEach((_, i) => {
+      maps.push('-map', `${i}:v:0`);
+      if (hasAudio) maps.push('-map', `${i}:a:0`);
+    });
+    const varMap = renditionPaths
+      .map((_, i) => (hasAudio ? `v:${i},a:${i}` : `v:${i}`))
+      .join(' ');
+    await this.runFfmpeg([
+      ...inputs,
+      ...maps,
+      '-c', 'copy',
+      '-f', 'hls',
+      '-hls_time', '4',
+      '-hls_playlist_type', 'vod',
+      '-hls_flags', 'independent_segments',
+      '-master_pl_name', 'master.m3u8',
+      '-var_stream_map', varMap,
+      '-hls_segment_filename', join(outDir, 'seg_%v_%03d.ts'),
+      join(outDir, 'stream_%v.m3u8'),
     ]);
   }
 

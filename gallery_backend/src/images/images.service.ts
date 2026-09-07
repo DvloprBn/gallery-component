@@ -10,7 +10,15 @@ import {
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -365,7 +373,8 @@ export class ImagesService {
     try {
       const masterPath = join(workDir, 'master.mp4');
       const posterPng = join(workDir, 'poster.png');
-      const previewPath = join(workDir, 'preview.mp4');
+      const hlsWorkDir = join(workDir, 'hls');
+      await mkdir(hlsWorkDir, { recursive: true });
 
       setStep('transcodificando master');
       await this.video.transcodeMaster(srcPath, masterPath, probe.hasAudio);
@@ -378,22 +387,120 @@ export class ImagesService {
       );
       const poster = await this.pipeline.process(await readFile(posterPng));
 
-      setStep('generando preview');
-      await this.video.buildPreview(masterPath, previewPath, probe.hasAudio);
-      const previewProbe = await this.video.probe(
-        previewPath,
-        (await readFile(previewPath)).byteLength,
-      );
-
-      setStep('incrustando derechos');
+      // Marca de agua: solo en álbumes `public` (D9), igual que las fotos.
+      const watermarkConfig =
+        visibility === 'public' ? await this.site.getWatermarkConfig() : null;
       const rights: RightsFields = resolveRights(
         await this.site.getRightsDefaults(),
         null,
       );
+
+      // Master limpio: derechos incrustados, NUNCA marca (D9 — no se sirve en público).
       await this.metadata.embedInPlace(masterPath, 'mp4', rights);
-      await this.metadata.embedInPlace(previewPath, 'mp4', rights);
       const masterBuf = await readFile(masterPath);
-      const previewBuf = await readFile(previewPath);
+
+      // Renditions HLS: 360/540/720/1080 que quepan bajo el master, más la del
+      // propio master. Cada una: escalada + marca incrustada (si es público).
+      const heights = [
+        ...new Set(
+          [360, 540, 720, 1080]
+            .filter((h) => h < probe.height)
+            .concat(Math.min(probe.height, 2160)),
+        ),
+      ].sort((a, b) => a - b);
+      const renditions: {
+        path: string;
+        width: number;
+        height: number;
+        bitrateKbps: number;
+      }[] = [];
+      for (const h of heights) {
+        const w = Math.round((probe.width * h) / probe.height / 2) * 2;
+        const bitrateKbps = bitrateForHeight(h);
+        const rPath = join(workDir, `r${h}.mp4`);
+        let overlayPath: string | null = null;
+        if (watermarkConfig) {
+          overlayPath = join(workDir, `wm${h}.png`);
+          await writeFile(
+            overlayPath,
+            await this.watermark.buildFrameOverlay(w, h, watermarkConfig),
+          );
+        }
+        setStep(`transcodificando ${h}p`);
+        await this.video.buildRendition(
+          masterPath,
+          rPath,
+          { width: w, height: h },
+          probe.frameRate,
+          bitrateKbps,
+          overlayPath,
+          probe.hasAudio,
+        );
+        await this.metadata.embedInPlace(rPath, 'mp4', rights);
+        renditions.push({ path: rPath, width: w, height: h, bitrateKbps });
+      }
+
+      // El preview standalone (respaldo sin HLS) = la rendition ≤720p más alta.
+      const previewRendition =
+        [...renditions].reverse().find((r) => r.height <= 720) ?? renditions[0];
+      const previewBuf = await readFile(previewRendition.path);
+
+      setStep('empaquetando HLS');
+      await this.video.packageHls(
+        renditions.map((r) => r.path),
+        hlsWorkDir,
+        probe.hasAudio,
+      );
+
+      // Subir segmentos + playlists, reescribiendo cada playlist para que sus
+      // líneas apunten a las URLs servidas (las claves del almacenamiento son
+      // opacas, no coinciden con los nombres relativos que genera ffmpeg).
+      setStep('subiendo HLS');
+      const HLS_TTL = Math.max(
+        600,
+        Number(process.env.MEDIA_HLS_URL_TTL_SECONDS) || 3600,
+      );
+      const urlOf = (key: string) =>
+        this.storage.urlFor(key, visibility, HLS_TTL);
+      const hlsFiles = await readdir(hlsWorkDir);
+      const hlsKeys: string[] = [];
+
+      const segUrlByName = new Map<string, string>();
+      for (const seg of hlsFiles.filter((f) => f.endsWith('.ts'))) {
+        const stored = await this.storage.put(
+          await readFile(join(hlsWorkDir, seg)),
+          { extension: 'ts', contentType: 'video/mp2t', visibility },
+        );
+        hlsKeys.push(stored.key);
+        segUrlByName.set(seg, urlOf(stored.key));
+      }
+      const streamUrlByName = new Map<string, string>();
+      for (const stream of hlsFiles
+        .filter((f) => /^stream_\d+\.m3u8$/.test(f))
+        .sort()) {
+        const rewritten = rewritePlaylist(
+          await readFile(join(hlsWorkDir, stream), 'utf8'),
+          segUrlByName,
+        );
+        const stored = await this.storage.put(Buffer.from(rewritten), {
+          extension: 'm3u8',
+          contentType: 'application/vnd.apple.mpegurl',
+          visibility,
+        });
+        hlsKeys.push(stored.key);
+        streamUrlByName.set(stream, urlOf(stored.key));
+      }
+      const masterM3u8 = rewritePlaylist(
+        await readFile(join(hlsWorkDir, 'master.m3u8'), 'utf8'),
+        streamUrlByName,
+      );
+      const hlsMaster = await this.storage.put(Buffer.from(masterM3u8), {
+        extension: 'm3u8',
+        contentType: 'application/vnd.apple.mpegurl',
+        visibility,
+      });
+      hlsKeys.push(hlsMaster.key);
+      uploadedKeys.push(...hlsKeys);
 
       setStep('subiendo');
       const master = await this.storage.put(masterBuf, {
@@ -418,10 +525,12 @@ export class ImagesService {
         bytes: number;
       }[] = [];
       for (const variant of poster.variants) {
-        // El póster es público — lleva los derechos incrustados igual que
-        // cualquier derivado de foto (la marca de agua sobre el póster llega
-        // en la Fase 14c).
-        const withRights = await this.metadata.embed(variant.buffer, 'webp', rights);
+        // El póster es público: marca (si el álbum es `public`) + derechos,
+        // igual que cualquier derivado de foto.
+        const marked = watermarkConfig
+          ? await this.watermark.composite(variant.buffer, watermarkConfig)
+          : variant.buffer;
+        const withRights = await this.metadata.embed(marked, 'webp', rights);
         const stored = await this.storage.put(withRights, {
           extension: 'webp',
           contentType: 'image/webp',
@@ -437,13 +546,15 @@ export class ImagesService {
           bytes: withRights.byteLength,
         });
       }
-      const large = variantRows.find((v) => v.label === 'large') ?? variantRows[variantRows.length - 1];
+      const large =
+        variantRows.find((v) => v.label === 'large') ??
+        variantRows[variantRows.length - 1];
       variantRows.push({
         storage_key: preview.key,
         label: 'preview',
         format: 'mp4',
-        width: previewProbe.width,
-        height: previewProbe.height,
+        width: previewRendition.width,
+        height: previewRendition.height,
         bytes: previewBuf.byteLength,
       });
 
@@ -457,6 +568,8 @@ export class ImagesService {
             checksum_sha256: createHash('sha256').update(masterBuf).digest('hex'),
             placeholder: poster.placeholder || null,
             poster_key: large?.storage_key ?? null,
+            hls_manifest_key: hlsMaster.key,
+            hls_keys: hlsKeys,
             processing_error: null,
             variants: { create: variantRows },
           },
@@ -644,12 +757,13 @@ export class ImagesService {
       where: { media_id: media.media_id },
     });
 
-    // `storage_key` puede ser `null` si es un video cuyo transcode nunca
-    // terminó; `hls_manifest_key` llega en la Fase 14c.
+    // `storage_key` puede ser `null` (video con transcode a medias);
+    // `hls_keys` reúne el master.m3u8 + los stream playlists + todos los
+    // segmentos `.ts`.
     const objectKeys = [
       media.storage_key,
       media.poster_key,
-      media.hls_manifest_key,
+      ...media.hls_keys,
       ...variants.map((v) => v.storage_key),
     ].filter((k): k is string => typeof k === 'string' && k.length > 0);
     await Promise.all(objectKeys.map((key) => this.storage.remove(key)));
@@ -713,6 +827,7 @@ export class ImagesService {
       created_at: Date;
       duration_ms?: number | null;
       processing_error?: string | null;
+      hls_manifest_key?: string | null;
     },
     variants: { label: string; format: string; storage_key: string; width: number; height: number }[],
     visibility: MediaVisibility,
@@ -745,6 +860,15 @@ export class ImagesService {
         ...(media.storage_key
           ? { original: this.storage.urlFor(media.storage_key, visibility) }
           : {}),
+        ...(media.hls_manifest_key
+          ? {
+              hls: this.storage.urlFor(
+                media.hls_manifest_key,
+                visibility,
+                HLS_URL_TTL,
+              ),
+            }
+          : {}),
         ...Object.fromEntries(
           variants.map((v) => [
             v.label,
@@ -754,4 +878,39 @@ export class ImagesService {
       },
     };
   }
+}
+
+/**
+ * TTL (segundos) de las URLs firmadas de los objetos HLS de un álbum privado.
+ * Más largo que el de imagen (300 s) porque una reproducción pausada o
+ * revisitada seguiría necesitando los segmentos. Para `public`/`unlisted` la
+ * URL es estable y esto no aplica.
+ */
+const HLS_URL_TTL = Math.max(
+  600,
+  Number(process.env.MEDIA_HLS_URL_TTL_SECONDS) || 3600,
+);
+
+/** Bitrate objetivo (kbps) para una altura de rendition HLS. */
+function bitrateForHeight(height: number): number {
+  if (height <= 360) return 800;
+  if (height <= 540) return 1400;
+  if (height <= 720) return 2800;
+  return 5000;
+}
+
+/**
+ * Reescribe una playlist HLS: cada línea que no empieza por `#` (y no está
+ * vacía) es un nombre de archivo relativo — se sustituye por su URL servida.
+ * Las líneas de directiva (`#EXT...`) se dejan igual.
+ */
+function rewritePlaylist(text: string, urlByName: Map<string, string>): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return line;
+      return urlByName.get(trimmed) ?? line;
+    })
+    .join('\n');
 }

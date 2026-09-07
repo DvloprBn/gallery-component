@@ -72,6 +72,54 @@ export class WatermarkService {
     }
   }
 
+  /**
+   * Construye un PNG **transparente del tamaño exacto de un fotograma de
+   * video** con la marca ya estampada (mosaico o esquina). ffmpeg lo aplica
+   * una sola vez con `overlay=0:0` sobre cada rendition pública (Fase 14c) —
+   * la marca no se puede "editar" cuadro a cuadro, va incrustada en la imagen.
+   *
+   * @param width - Ancho del fotograma de la rendition.
+   * @param height - Alto del fotograma de la rendition.
+   * @param config - Configuración resuelta (logo o texto, opacidad, patrón).
+   * @returns El PNG RGBA `width`×`height`. Si algo falla al construir la marca,
+   *          devuelve un PNG **transparente sin marca** — el llamador decide si
+   *          eso es aceptable (para `public` debería lograrse; se registra un
+   *          `warn`).
+   */
+  async buildFrameOverlay(
+    width: number,
+    height: number,
+    config: WatermarkConfig,
+  ): Promise<Buffer> {
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    const transparent = sharp({
+      create: {
+        width: w,
+        height: h,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    });
+    try {
+      const opacity = Math.min(0.9, Math.max(0.05, config.opacity || 0.35));
+      const tile = Math.max(1, Math.min(MAX_TILE, w, h));
+      const overlay = config.assetBuffer
+        ? await this.buildLogoOverlay(config.assetBuffer, opacity, config.placement, tile)
+        : await this.buildTextOverlay(config.text, opacity, config.placement, tile);
+      const composed =
+        config.placement === 'corner'
+          ? transparent.composite([{ input: overlay, gravity: 'southeast' }])
+          : transparent.composite([{ input: overlay, tile: true }]);
+      return await composed.png().toBuffer();
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo construir la marca de agua para video: ${(error as Error).message}`,
+      );
+      return await transparent.png().toBuffer();
+    }
+  }
+
   /** Construye el mosaico de texto (rotado en `tiled`, recto en `corner`), como PNG con alfa. */
   private async buildTextOverlay(
     text: string,

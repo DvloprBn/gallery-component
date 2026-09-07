@@ -128,11 +128,11 @@ export class AlbumsService {
 
     for (const media of rows) {
       // `storage_key` puede ser null (video con transcode a medias);
-      // `poster_key`/`hls_manifest_key` solo existen en video.
+      // `poster_key`/`hls_keys` solo existen en video.
       for (const key of [
         media.storage_key,
         media.poster_key,
-        media.hls_manifest_key,
+        ...media.hls_keys,
         ...media.variants.map((v) => v.storage_key),
       ]) {
         if (key) await this.storage.remove(key);

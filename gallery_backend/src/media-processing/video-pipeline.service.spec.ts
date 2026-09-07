@@ -88,4 +88,41 @@ describe('VideoPipelineService (ffmpeg real)', () => {
     expect(probe.height).toBeLessThanOrEqual(720);
     expect(probe.width).toBeLessThanOrEqual(1280);
   }, 30_000);
+
+  it('buildRendition() escala a un tamaño exacto e incrusta una marca PNG', async () => {
+    const master = join(dir, 'master.mp4');
+    // Overlay: PNG rojo semitransparente 160x120 (el tamaño de la rendition).
+    const overlay = join(dir, 'wm.png');
+    await execFileAsync('ffmpeg', [
+      '-v', 'error', '-y',
+      '-f', 'lavfi', '-i', 'color=c=red@0.5:s=160x120',
+      '-frames:v', '1', overlay,
+    ]);
+    const out = join(dir, 'r120.mp4');
+    await service.buildRendition(
+      master, out, { width: 160, height: 120 }, 12, 400, overlay, true,
+    );
+    const probe = await service.probe(out, (await stat(out)).size);
+    expect(probe.width).toBe(160);
+    expect(probe.height).toBe(120);
+  }, 45_000);
+
+  it('packageHls() produce master.m3u8 + stream_N.m3u8 + segmentos .ts', async () => {
+    const master = join(dir, 'master.mp4');
+    const r120 = join(dir, 'p120.mp4');
+    const r180 = join(dir, 'p180.mp4');
+    await service.buildRendition(master, r120, { width: 160, height: 120 }, 12, 300, null, true);
+    await service.buildRendition(master, r180, { width: 240, height: 180 }, 12, 500, null, true);
+    const hlsDir = join(dir, 'hls');
+    await import('node:fs/promises').then((m) => m.mkdir(hlsDir, { recursive: true }));
+    await service.packageHls([r120, r180], hlsDir, true);
+    const { readdir, readFile } = await import('node:fs/promises');
+    const files = await readdir(hlsDir);
+    expect(files).toContain('master.m3u8');
+    expect(files.filter((f) => /^stream_\d+\.m3u8$/.test(f)).length).toBe(2);
+    expect(files.some((f) => f.endsWith('.ts'))).toBe(true);
+    const masterPl = await readFile(join(hlsDir, 'master.m3u8'), 'utf8');
+    expect(masterPl).toContain('#EXT-X-STREAM-INF');
+    expect(masterPl).toContain('stream_0.m3u8');
+  }, 60_000);
 });

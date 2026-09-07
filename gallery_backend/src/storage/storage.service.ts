@@ -50,9 +50,9 @@ export class StorageService {
    * @returns URL estable para `public`/`unlisted`; URL firmada de vida corta
    *          para `private`.
    */
-  urlFor(key: string, visibility: MediaVisibility): string {
+  urlFor(key: string, visibility: MediaVisibility, ttlSeconds?: number): string {
     return visibility === 'private'
-      ? this.driver.signedUrl(key, this.ttl)
+      ? this.driver.signedUrl(key, ttlSeconds ?? this.ttl)
       : this.driver.publicUrl(key);
   }
 

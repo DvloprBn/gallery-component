@@ -28,8 +28,10 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
   obligatorio, tiro de metadatos EXIF/GPS, límites contra decompression bombs y DoS de subida,
   archivos privados solo por URL firmada.
 - **Video** (Fase 14, en curso): se sube, se valida con `ffprobe` (contenedor, duración,
-  resolución, frame rate) y se transcodifica en segundo plano a un master limpio + póster + preview
-  MP4 720p; se reproduce en el lightbox. Marca de agua y HLS adaptativo llegan en 14c.
+  resolución, frame rate) y se transcodifica en segundo plano a un master limpio + póster + varias
+  renditions **con marca de agua**, empaquetadas como **HLS adaptativo** (`master.m3u8` multi-calidad);
+  se reproduce en el lightbox con `hls.js`. El licenciamiento del video y el hero en video llegan
+  en 14d.
 - **Protección de la obra**: marca de agua estampada por el servidor en todo lo público, el
   original de alta resolución nunca se sirve fuera de un álbum privado, registro de derechos por
   imagen embebido en IPTC/XMP con `exiftool` real.
@@ -40,8 +42,8 @@ simulados, seguridad como prioridad #1, documentado al grado de poder leerse com
 
 ## Stack
 
-NestJS 11 + Prisma 7 + PostgreSQL 18 (backend) · Next.js 16 + React 19 (frontend) · Redis ·
-`sharp` (imagen) + `ffmpeg`/`ffprobe` (video) + `exiftool` (derechos IPTC/XMP) · almacenamiento
+NestJS 11 + Prisma 7 + PostgreSQL 18 (backend) · Next.js 16 + React 19 + `hls.js` (frontend) · Redis ·
+`sharp` (imagen) + `ffmpeg`/`ffprobe` (video, HLS) + `exiftool` (derechos IPTC/XMP) · almacenamiento
 S3-compatible · Docker Compose.
 
 ## Documentación
@@ -143,10 +145,11 @@ subir imágenes, tema, ajustes de identidad, bandeja de contacto) y **Administra
 docker compose exec gallery_backend npm test
 ```
 
-107 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
+110 tests, 16 suites: utilidades puras (AES-256-GCM, TOTP, escape HTML, slug, firma HMAC de URLs),
 pipeline de imagen (procesa JPEG, elimina EXIF, rechaza no-imagen/SVG/decompression bomb),
 `video-pipeline.service.spec.ts` (integración con `ffmpeg`/`ffprobe`/`exiftool` reales: valida un
-MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview 720p), dos
+MP4, rechaza no-video y exceso de tamaño, saca master sin metadatos + póster + preview, escala una
+rendition e incrusta la marca, empaqueta HLS multi-calidad), dos
 suites de integración contra el Postgres de desarrollo (jerarquía de roles y de cuentas), las
 unitarias de `SiteService` / `ContactService` / `ImagesService` / `LicensingService` (validación del hero publicado,
 honeypot, escape del correo, cambio de estado en bloque acotado al álbum, regeneración en segundo

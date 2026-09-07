@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GalleryMedia } from '@/lib/gallery-schema';
 import { useSite } from '@/lib/site';
+import { loadHls } from '@/lib/load-hls';
 import { LicenseRequestForm } from './LicenseRequestForm';
 
 /**
@@ -31,6 +32,7 @@ export function Lightbox({
   const [visible, setVisible] = useState(false);
   // Panel de "Solicitar licencia" (Fase 12d) — se cierra solo al cambiar de foto.
   const [showLicenseForm, setShowLicenseForm] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -47,6 +49,56 @@ export function Lightbox({
   useEffect(() => {
     setShowLicenseForm(false);
   }, [index]);
+
+  // Reproducción del video abierto: HLS adaptativo si el navegador lo soporta
+  // (nativo en Safari, vía `hls.js` en el resto); si no, el `preview` MP4.
+  const openMedia = index !== null ? media[index] : undefined;
+  const hlsUrl = openMedia?.kind === 'video' ? openMedia.urls.hls : undefined;
+  const previewUrl = openMedia?.kind === 'video' ? openMedia.urls.preview : undefined;
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || openMedia?.kind !== 'video') return;
+
+    if (!hlsUrl) {
+      if (previewUrl) el.src = previewUrl;
+      return;
+    }
+    // Safari (y iOS) reproducen HLS de forma nativa.
+    if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = hlsUrl;
+      return;
+    }
+    let destroyed = false;
+    let hls: { destroy(): void } | null = null;
+    loadHls()
+      .then((Hls) => {
+        if (destroyed || !videoRef.current) return;
+        if (!Hls.isSupported()) {
+          if (previewUrl) videoRef.current.src = previewUrl;
+          return;
+        }
+        const instance = new Hls({ enableWorker: false });
+        hls = instance;
+        instance.on(Hls.Events.ERROR, (_e, data) => {
+          if (data.fatal && previewUrl && videoRef.current) {
+            instance.destroy();
+            hls = null;
+            videoRef.current.src = previewUrl;
+          }
+        });
+        instance.loadSource(hlsUrl);
+        instance.attachMedia(videoRef.current);
+      })
+      .catch(() => {
+        if (!destroyed && previewUrl && videoRef.current) {
+          videoRef.current.src = previewUrl;
+        }
+      });
+    return () => {
+      destroyed = true;
+      hls?.destroy();
+    };
+  }, [hlsUrl, previewUrl, openMedia?.kind]);
 
   const go = useCallback(
     (delta: number) => {
@@ -106,8 +158,8 @@ export function Lightbox({
         {current.kind === 'video' ? (
           <video
             key={current.mediaId}
+            ref={videoRef}
             className="g-lightbox-img"
-            src={current.urls.preview}
             poster={current.urls.large ?? current.urls.medium}
             controls
             playsInline

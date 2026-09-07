@@ -14,10 +14,10 @@
 
 Estado global: **Fases 2 (identidad), 3 (media), 5 (Studio), 10 (portafolio: `/site` + `/contact`),
 10b (curación), 11 (protección: marca de agua + derechos), 12 completa —12a–12d— (licenciamiento) y
-14a–14b (video: modelo + pipeline `ffmpeg`) verificadas.** Verificados con `curl` / scripts contra
+14a–14c (video: modelo + pipeline `ffmpeg` + marca de agua + HLS) verificadas.** Verificados con `curl` / scripts contra
 el backend en vivo los puntos de OWASP API Top 10 que aplican, el bloque de **seguridad de
 archivos** (F1–F19, incluida una corrección real en F19), el de identidad de sitio/contacto
-(S1–S13), el de protección (P1–P8), el de licenciamiento (L1–L17) y el de **video** (V1–V10 — ver
+(S1–S13), el de protección (P1–P8), el de licenciamiento (L1–L17) y el de **video** (V1–V14 — ver
 más abajo). Pendiente para producción: confirmar API9 (inventario) y correr F7/F10 con
 volumen/espera reales.
 
@@ -201,7 +201,7 @@ Mismo patrón que el bloque S (contacto) — solo cambia que la solicitud va lig
 
 ---
 
-## Bloque específico — Video (`POST /albums/:id/media`, transcode — Fase 14b)
+## Bloque específico — Video (`POST /albums/:id/media`, transcode, HLS — Fases 14b–14c)
 
 Mismo principio que el bloque de imagen: **el archivo del cliente nunca se sirve tal cual** y la
 validación es por contenido, no por extensión ni `Content-Type`. Aquí la autoridad es `ffprobe`.
@@ -217,7 +217,11 @@ validación es por contenido, no por extensión ni `Content-Type`. Aquí la auto
 | V7 | Derechos en el archivo servido (invariante D10) | el preview y el master llevan `exiftool` con las etiquetas de derechos (XMP `dc:Rights`/`dc:Creator`, `Copyright`, `Artist`, `UsageTerms`, `WebStatement`, `LicensorURL`) — igual que cualquier derivado de foto | ✅ Probado 2026-09-07 (`exiftool` sobre el preview descargado) |
 | V8 | `GET /media/:id/processing` | `admin`+ y **valida propiedad del álbum** (`loadManageable`); sin sesión → 401, `usuario` → 403 | ✅ Cubierto (mismo `loadManageable` que `PATCH /media/:id`, probado en L-equivalentes) |
 | V9 | Fallo de transcode | error de `ffmpeg` → `media.processing_error` (el gestor lo ve), objetos ya subidos se limpian, el video **no** se publica; nunca tumba el proceso. Reinicio a mitad → `processing` reporta `interrumpido` | ✅ Revisado en código |
-| V10 | `GET /media/:key` de un `.mp4` | `DiskStorageDriver` valida la clave con `^<uuid>\.[a-z0-9]{3,4}$` (un `../` o barra nunca llega al FS — path traversal); sirve con `Content-Type: video/mp4`; privado exige la firma HMAC igual que una imagen | ✅ Revisado en código (regex corregida en 14b) |
+| V10 | `GET /media/:key` de un `.mp4`/`.m3u8`/`.ts` | `DiskStorageDriver` valida la clave con `^<uuid>\.[a-z0-9]{2,4}$` (un `../` o barra nunca llega al FS — path traversal); sirve con el `Content-Type` correcto (`video/mp4` / `application/vnd.apple.mpegurl` / `video/mp2t`); un objeto de álbum privado exige la firma HMAC igual que una imagen | ✅ Revisado en código (regex ampliada en 14b/14c) |
+| V11 | HLS — el master limpio no se puede armar desde las playlists (Fase 14c) | `master.m3u8` solo lista `stream_N.m3u8`; estas solo listan segmentos `.ts` **ya escalados y con marca de agua incrustada** (renditions). El master de alta resolución sin marca NO está en ningún playlist ni en `urls` de la galería pública — solo se entrega bajo licencia (Fase 12/14d) | ✅ Probado 2026-09-07 (`verify-14c.mjs`: `urls.hls` sí, `urls.original` no) |
+| V12 | HLS — visibilidad de cada objeto | los objetos HLS viven en `media.hls_keys`; `visibilityOfKey` los resuelve por ahí (además de `storage_key`/`media_variants`) → un segmento de un álbum **privado** exige la firma HMAC en `GET /media/:key`, igual que cualquier media privada. Las URIs dentro de las playlists de un álbum privado se firman con un TTL más largo (`MEDIA_HLS_URL_TTL_SECONDS`) pero **con la misma firma** | ✅ Probado 2026-09-07 (bug de 404 en todas las URLs HLS encontrado y corregido; `verify-14c` sirve todas las piezas) |
+| V13 | HLS — limpieza al borrar | `media.hls_keys` reúne el master.m3u8 + las playlists + **todos** los segmentos; `DELETE /media/:id` y el borrado de álbum iteran ese array → cero objetos huérfanos | ✅ Probado 2026-09-07 (`verify-14c.mjs`: tras borrar, un `.ts` de antes → **404**) |
+| V14 | `hls.js` desde `cdnjs` | la CSP `script-src` gana **solo** `https://cdnjs.cloudflare.com` (para `hls.min.js` pineado a 1.5.17); `enableWorker:false` para no depender de `worker-src`; los segmentos se piden al mismo origen que la API (`connect-src` ya lo permite); MSE usa `blob:` (`media-src` ya lo permite) | ✅ Revisado en código |
 
 ---
 
