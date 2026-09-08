@@ -1205,51 +1205,20 @@ button.danger:not(.link-button):hover:not(:disabled) {
   top: 0;
 }
 
+/* El libro es INDEPENDIENTE del scroll (Fase 15g): vive en el flujo normal,
+   no fija la pantalla ni obliga a hojearlo entero. Solo centra el libro y
+   los controles debajo. */
 .g-book--flip {
-  align-items: center;
-}
-
-/* Pista de scroll: alta, hace de "recorrido" del libro fijo (Fase 15c). */
-.g-book__track {
-  position: relative;
-  width: 100%;
-}
-
-.g-book__stage {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: clamp(1rem, 3vw, 1.75rem);
+  margin: clamp(1.75rem, 5vw, 3.5rem) auto;
 }
 
-/* El pin solo en escritorio y con movimiento permitido (en móvil el pin
-   pelea con el scroll nativo — ahí el libro fluye y se pasa con gesto). */
-@media (min-width: 701px) and (prefers-reduced-motion: no-preference) {
-  .g-book__track {
-    height: calc(var(--book-positions, 4) * 88vh);
-  }
-  .g-book__stage {
-    position: sticky;
-    top: 0;
-    min-height: 100vh;
-    padding-block: 2vh;
-  }
-}
-
-/* ── Fotolibro de portada en /trabajo (Fase 15e) ──────────────────────────
-   Reusa `BookLayout` en modo "libro". Aquí hay una `.site-header` sticky, así
-   que la escena fijada arranca debajo de ella (si no, quedaría tapada). */
+/* ── Fotolibro de portada en /trabajo (Fase 15e) ── */
 .pf-showcase {
-  --site-header-h: 3.25rem;
-  margin: clamp(1rem, 4vw, 2.5rem) 0 clamp(2.5rem, 8vw, 5rem);
-}
-
-@media (min-width: 701px) and (prefers-reduced-motion: no-preference) {
-  .pf-showcase .g-book__stage {
-    top: var(--site-header-h);
-    min-height: calc(100vh - var(--site-header-h));
-  }
+  margin: clamp(1.5rem, 5vw, 3rem) 0 clamp(2.5rem, 8vw, 5rem);
 }
 
 /* ── Cuerpo del libro (Fase 15f): tapas + lomo + canto + sombra alrededor
@@ -1392,6 +1361,81 @@ button.danger:not(.link-button):hover:not(:disabled) {
   filter: blur(7px);
 }
 
+/* Transición suave al abrir/cerrar (los adornos aparecen/desaparecen). */
+.g-book__board,
+.g-book__body::before,
+.g-book__body::after {
+  transition:
+    opacity 0.5s ease,
+    width 0.5s ease;
+}
+
+/* ── Libro CERRADO (Fase 15g): sin las decoraciones del lado izquierdo — no
+   hay bloque de páginas leídas todavía. `page-flip` muestra la portada sola;
+   el lomo y la tapa/canto derechos hacen de libro shut. ── */
+.g-book__body[data-open='false'] .g-book__board--l,
+.g-book__body[data-open='false']::before {
+  opacity: 0;
+}
+
+/* Oclusión permanente en la canal cuando el libro está ABIERTO. */
+.g-book__body[data-open='true'] .g-book__flip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 44%,
+    rgba(0, 0, 0, 0.15) 49.5%,
+    rgba(0, 0, 0, 0.15) 50.5%,
+    transparent 56%
+  );
+}
+
+/* Botón que cubre la portada: tocarla abre el libro. `hidden` una vez abierto. */
+.g-book__open {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 12%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.g-book__open[hidden] {
+  display: none;
+}
+.g-book__open-label {
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--g-accent) 90%, #000);
+  color: #0b0b0f;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  box-shadow: 0 10px 26px -8px rgba(0, 0, 0, 0.6);
+  animation: g-book-open-pulse 2.6s ease-in-out infinite;
+}
+@keyframes g-book-open-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-book__open-label {
+    animation: none;
+  }
+}
+
 .g-book__progress {
   font-size: 0.78rem;
   letter-spacing: 0.08em;
@@ -1452,12 +1496,31 @@ button.danger:not(.link-button):hover:not(:disabled) {
   padding: 0;
 }
 
-.g-book__leaf--cover,
-.g-book__leaf--blank {
+/* Tapa: material más presente que una hoja — tono oscuro del tema, relieve
+   en los bordes y una veladura diagonal de luz. */
+.g-book__leaf--cover {
   background:
-    linear-gradient(135deg,
-      color-mix(in srgb, var(--g-accent) 16%, var(--book-paper)),
-      var(--book-paper));
+    linear-gradient(
+      118deg,
+      rgba(255, 255, 255, 0.08),
+      transparent 34%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--g-accent) 24%, #10101a),
+      color-mix(in srgb, var(--g-fg) 14%, #0c0c14)
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 2px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -3px 8px rgba(0, 0, 0, 0.4);
+}
+.g-book__leaf--blank {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--g-accent) 16%, var(--book-paper)),
+    var(--book-paper)
+  );
 }
 .g-book__leaf--cover .g-book__cover,
 .g-book__leaf--cover .g-book__back {

@@ -2467,10 +2467,11 @@ de ir a sangre. El folio y el botón transparente (`.g-book__leaf-btn`, `inset: 
 | 15d — pulido (portada, video, CTA, a11y) | ✅ construida (SSR verificado) |
 | 15e — fotolibro de portada en `/trabajo` | ✅ construida (API + SSR verificados) |
 | 15f — arreglo del ciclado scroll↔giro + cuerpo de libro (CSS) | ✅ construida (SSR verificado; interacción sin navegador) |
+| 15g — libro independiente del scroll + arranque cerrado | ✅ construida (SSR verificado; interacción sin navegador) |
 
 **Fase 15 completa.** Pendiente transversal: medición de Core Web Vitals y prueba visual del
-pase de página / del arreglo del ciclado en un navegador real. El libro three.js queda como
-proyecto propio (ver §30.3).
+libro (ahora independiente del scroll) en un navegador real. El libro three.js queda como
+proyecto propio (ver §30.3 / §31.3).
 
 ---
 
@@ -2632,3 +2633,75 @@ impuesto. La capa WebGL reutilizable se construiría ahí, con propósito.
 > el modelo descrito y los eventos reales de `page-flip` (`changeState` con
 > `read`/`user_fold`/`flipping`/`fold_corner`, confirmados leyendo el bundle), pero su
 > comportamiento en pantalla está sin comprobar — lo confirma el dueño.
+
+---
+
+## 31. Fase 15g — Fotolibro: independiente del scroll + arranque cerrado (construida, 2026-09-07)
+
+Tras probar la 15f, el dueño pidió tres cosas concretas: **el libro debe ser independiente del
+scroll** (no fijar la pantalla ni obligar a hojearlo entero — "aún se comporta extraño"),
+**que simule primero un libro cerrado**, y **más realismo**. Esto revierte la decisión de la
+15c (sección fija / scroll cinematográfico), ya con el efecto visto en marcha.
+
+### 31.1 Fuera todo el acoplamiento con el scroll
+
+Se **eliminó** de `BookLayout.tsx` (modo `flip`): el `.g-book__track` alto, el `.g-book__stage`
+con `position: sticky`, el listener `scroll`/`scrollend`, `offsetForPage`/`syncScrollTo`/
+`scheduleSnap`, `suppressUntil`, `userFlipRef`, el `changeState`→sync y el listener global de
+`keydown` en `window`. El libro vive ahora en el **flujo normal**: la página hace scroll y
+pasa de largo; nadie está obligado a hojearlo. Con esto desaparece toda la maquinaria que
+producía el comportamiento "extraño" (era, en el fondo, el lazo scroll↔giro; sin scroll de por
+medio no hay lazo).
+
+**Se pasa página** solo con: **arrastre** (nativo de `page-flip`), botones **‹ ›**, y las
+**flechas del teclado cuando el foco está dentro del libro** — el `keydown` se engancha a
+`rootRef` (el contenedor `.g-book--flip`) y solo reacciona si el evento burbujea desde un hijo
+enfocado; el libro **nunca** secuestra las flechas de la página.
+
+### 31.2 Arranque cerrado
+
+Estado nuevo `open` (`useState`, arranca `false`; el `flip` lo pone a `p > 0`). `page-flip` con
+`showCover: true` ya muestra la portada sola; `.g-book__body` lleva `data-open="false"|"true"`
+y en el estado cerrado se **ocultan las decoraciones del lado izquierdo** (`.g-book__board--l`
+y el canto `::before` — no hay bloque de "páginas leídas" todavía), quedando el lomo + la tapa
+y el canto derechos como libro shut. Al abrir, reaparecen con una transición de 0.5 s.
+
+**Abrir**: un `<button class="g-book__open">` cubre la portada (chip "Abrir libro" con un
+pulso sutil, respeta `prefers-reduced-motion`); llama `flipRef.current?.flipNext()`. Siempre
+está en el DOM (page-flip reubica la hoja) y se apaga con el atributo `hidden` cuando
+`open`. El botón **›** hace de "Abrir" también cuando está cerrado (mismo `flipNext`); el
+indicador dice **"Cerrado"** hasta que se abre.
+
+### 31.3 Más realismo (dentro de `page-flip`/CSS)
+
+- Tapa (`.g-book__leaf--cover`): material oscuro del tema (`color-mix` con `--g-accent` y
+  `--g-fg` sobre casi-negro), relieve en los bordes (`inset` box-shadows) y veladura diagonal
+  de luz.
+- Oclusión **permanente** en la canal cuando el libro está abierto
+  (`.g-book__body[data-open="true"] .g-book__flip::after`, franja central tenue).
+- `page-flip`: `flippingTime` 750 → **800** (giro con más peso), `maxShadowOpacity` 0.65 →
+  **0.7**, `usePortrait: true` (móvil = una página con swipe), `swipeDistance: 20`.
+- Sombra de suelo y perspectiva de la 15f se mantienen.
+
+El **techo real** sigue siendo WebGL: un libro three.js/OGL (doblez como papel, grosor real,
+luz que reacciona al pliegue) queda como **proyecto propio** (§30.3) — sería la 2ª librería de
+UI, las páginas pasarían a ser texturas y no hay navegador aquí para verificarlo.
+
+### 31.4 `/trabajo` y `/g/:slug`
+
+Sin cambios de estructura. El `.pf-showcase` de la 15e se simplificó a solo espaciado (ya no
+hay que compensar el pin bajo la `.site-header`). El modo `static` (SSR / sin JS) **no
+cambió**. Móvil: sin scroll-jacking en ninguna parte, usa el mismo libro (`page-flip` en
+retrato).
+
+### 31.5 Verificación
+
+- `tsc` front limpio; `next build` producción OK (16 rutas). Backend sin cambios (**121 tests
+  / 17 suites**). `verify-15a.mjs` **14/14** y `verify-showcase.mjs` **20/20** — el SSR
+  (fotolibro plano) no cambió.
+
+> **No verificado en navegador real** (sin herramienta de browser): que el libro ya se comporte
+> bien sin el scroll de por medio, cómo se ve el estado cerrado (depende de dónde ponga
+> `page-flip` la portada — puede necesitar un ajuste fino de los `%` del lomo/tapa), el botón
+> "Abrir", y el realismo de la tapa. La lógica es ahora mucho más simple (sin sincronía de
+> scroll) pero su comportamiento en pantalla lo confirma el dueño.
