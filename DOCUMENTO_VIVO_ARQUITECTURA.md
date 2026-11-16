@@ -2705,3 +2705,24 @@ retrato).
 > `page-flip` la portada — puede necesitar un ajuste fino de los `%` del lomo/tapa), el botón
 > "Abrir", y el realismo de la tapa. La lógica es ahora mucho más simple (sin sincronía de
 > scroll) pero su comportamiento en pantalla lo confirma el dueño.
+
+### 31.6 Ajuste de volumen del canto de páginas (2026-09-08)
+
+El dueño confirmó: orientación del libro (de frente) y el giro de `page-flip` **se quedan**;
+pidió solo **más volumen 3D** y que **los bordes parezcan tener más hojas**. Se descartó
+explícitamente inclinar el libro o abrir las tapas con bisagra 3D (ahí `page-flip` y el CSS 3D
+chocan y se desplaza el hit-testing del arrastre). Cambios, todos en elementos **hermanos /
+detrás** del host de `page-flip` (cero riesgo para la interacción):
+
+- **`.g-book__body::before/::after`** (el canto de páginas): de una tira plana de líneas de 1 px
+  a un taco con líneas **muy finas y densas** (0.5 px cada 2.3 px → se lee como cientos de
+  hojas) + veladura cálida de papel (`color-mix` hacia crema) + una `radial-gradient` que
+  **redondea el canto** (más oscuro en los bordes, claro al centro) + canto superior iluminado
+  e inferior en sombra (`inset` box-shadows). Ancho máximo **26 px → 40 px**.
+- **Tapas** (`.g-book__board`): bisel — realce arriba + sombra interior abajo, y sombra
+  proyectada más profunda; `rotateY` de las tapas `±1.1°` → `±1.8°` (abren un poco más).
+- **`.g-book__body` `perspective`** 2600 → 2200 px, origen `50% 26%` (un poco más de
+  profundidad). **`.g-book__shadow`** de suelo más ceñida y oscura.
+
+`tsc` + `next build` prod OK. Sigue sin verificar en navegador (es decorativo y detrás del
+host; el modo de fallo es "se ve plano", no "se rompe").

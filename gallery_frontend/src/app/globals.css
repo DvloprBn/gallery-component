@@ -1234,8 +1234,8 @@ button.danger:not(.link-button):hover:not(:disabled) {
 
 @media (min-width: 701px) {
   .g-book__body {
-    perspective: 2600px;
-    perspective-origin: 50% 32%;
+    perspective: 2200px;
+    perspective-origin: 50% 26%;
   }
 }
 
@@ -1263,22 +1263,23 @@ button.danger:not(.link-button):hover:not(:disabled) {
     color-mix(in srgb, var(--g-fg) 20%, #000)
   );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
-    0 40px 70px -34px rgba(0, 0, 0, 0.75);
+    inset 0 2px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -6px 12px -4px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    0 48px 80px -34px rgba(0, 0, 0, 0.8);
 }
 .g-book__board--l {
-  left: -2%;
+  left: -2.4%;
   right: 50.2%;
   border-radius: 4px 2px 2px 4px;
-  transform: rotateY(1.1deg);
+  transform: rotateY(1.8deg);
   transform-origin: right center;
 }
 .g-book__board--r {
-  right: -2%;
+  right: -2.4%;
   left: 50.2%;
   border-radius: 2px 4px 4px 2px;
-  transform: rotateY(-1.1deg);
+  transform: rotateY(-1.8deg);
   transform-origin: left center;
 }
 
@@ -1304,29 +1305,46 @@ button.danger:not(.link-button):hover:not(:disabled) {
 
 /* Canto de páginas: el taco de hojas apiladas que se ve por el corte, en el
    borde EXTERIOR de cada lado (nunca en el lomo). El izquierdo —lo ya leído—
-   crece y el derecho —lo que falta— encoge con `--book-page`/`--book-count`. */
+   crece y el derecho —lo que falta— encoge con `--book-page`/`--book-count`.
+   Líneas muy finas y densas (= muchas hojas) + veladura cálida de papel +
+   una sombra radial que redondea el canto para dar volumen. */
 .g-book__body::before,
 .g-book__body::after {
   content: '';
   position: absolute;
-  top: 1.6%;
-  bottom: 1.6%;
+  top: 1%;
+  bottom: 1%;
   z-index: 2;
   pointer-events: none;
-  background: repeating-linear-gradient(
-    to right,
-    color-mix(in srgb, var(--book-paper) 86%, #000) 0 1px,
-    var(--book-paper) 1px 3px
-  );
-  box-shadow: 0 16px 30px -14px rgba(0, 0, 0, 0.55);
+  background:
+    repeating-linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.16) 0 0.5px,
+      transparent 0.5px 2.3px
+    ),
+    radial-gradient(
+      130% 100% at 50% 50%,
+      transparent 52%,
+      rgba(0, 0, 0, 0.34) 100%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--book-paper) 86%, #e6d9bd),
+      color-mix(in srgb, var(--book-paper) 78%, #b9a988)
+    );
+  box-shadow:
+    0 24px 44px -16px rgba(0, 0, 0, 0.62),
+    inset 0 2px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
 }
 /* Izquierdo: páginas ya leídas → crece con `--book-page`. */
 .g-book__body::before {
   right: 100%;
   width: clamp(
     1px,
-    calc(var(--book-page, 0) / max(var(--book-count, 20), 1) * 26px),
-    26px
+    calc(var(--book-page, 0) / max(var(--book-count, 20), 1) * 40px),
+    40px
   );
   border-radius: 3px 0 0 3px;
 }
@@ -1337,9 +1355,9 @@ button.danger:not(.link-button):hover:not(:disabled) {
     1px,
     calc(
       (max(var(--book-count, 20), 1) - var(--book-page, 0)) /
-        max(var(--book-count, 20), 1) * 26px
+        max(var(--book-count, 20), 1) * 40px
     ),
-    26px
+    40px
   );
   border-radius: 0 3px 3px 0;
 }
@@ -1347,18 +1365,18 @@ button.danger:not(.link-button):hover:not(:disabled) {
 /* Sombra en el suelo, para asentar el libro. */
 .g-book__shadow {
   position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: -6%;
-  height: 12%;
+  left: 7%;
+  right: 7%;
+  bottom: -5%;
+  height: 11%;
   z-index: 0;
   pointer-events: none;
   background: radial-gradient(
-    58% 100% at 50% 0%,
-    rgba(0, 0, 0, 0.55),
-    transparent 72%
+    54% 100% at 50% 0%,
+    rgba(0, 0, 0, 0.62),
+    transparent 74%
   );
-  filter: blur(7px);
+  filter: blur(8px);
 }
 
 /* Transición suave al abrir/cerrar (los adornos aparecen/desaparecen). */
